@@ -196,7 +196,37 @@ export function TemplateBuilder() {
           <h1 className="text-2xl font-bold">{template.name}</h1>
           <p className="text-sm text-gray-600">Nodes: {template.graph.nodes.length} · Edges: {template.graph.edges.length}</p>
         </div>
-        <a className="btn-outline btn-sm" href="/templates">Back</a>
+        <div className="flex items-center gap-2">
+          <button
+            className="btn-outline btn-sm"
+            onClick={async () => {
+              try {
+                const node = document.getElementById('flow-canvas-root');
+                if (!node) return;
+                const [{ default: html2canvas }, { jsPDF }] = await Promise.all([
+                  import('html2canvas'),
+                  import('jspdf'),
+                ]);
+                const canvas = await html2canvas(node as HTMLElement, { backgroundColor: '#ffffff', scale: 2, useCORS: true });
+                const imgData = canvas.toDataURL('image/png');
+                const pdf = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' });
+                const pageWidth = pdf.internal.pageSize.getWidth();
+                const pageHeight = pdf.internal.pageSize.getHeight();
+                const imgWidth = pageWidth - 40;
+                const imgHeight = (canvas.height * imgWidth) / canvas.width;
+                const finalWidth = imgHeight > pageHeight - 40 ? ((canvas.width * (pageHeight - 40)) / canvas.height) : imgWidth;
+                const finalHeight = imgHeight > pageHeight - 40 ? (pageHeight - 40) : imgHeight;
+                const x = (pageWidth - finalWidth) / 2;
+                const y = (pageHeight - finalHeight) / 2;
+                pdf.addImage(imgData, 'PNG', x, y, finalWidth, finalHeight);
+                pdf.save(`${template.name.replace(/\s+/g,'_')}_flow.pdf`);
+              } catch {}
+            }}
+          >
+            Export PDF
+          </button>
+          <a className="btn-outline btn-sm" href="/templates">Back</a>
+        </div>
       </div>
 
       <div className="flex gap-2 text-xs text-gray-700">
@@ -223,7 +253,7 @@ export function TemplateBuilder() {
         <button className="btn-primary btn-sm" onClick={handleAddNode}>+ Add Node</button>
       </div>
 
-      <div className="bg-white border rounded-lg h-[70vh]">
+      <div id="flow-canvas-root" className="relative left-1/2 right-1/2 -mx-[50vw] w-screen bg-white border-t border-b h-[calc(100vh-220px)]">
         <ReactFlow
           nodes={nodes}
           edges={edges}
