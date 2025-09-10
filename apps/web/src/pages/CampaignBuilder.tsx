@@ -174,6 +174,39 @@ function ContactsTab({ contacts }: ContactsTabProps) {
   const params = useParams();
   const campaignId = params.id as string;
   const [stagesLocal, setStagesLocal] = useState<Array<{ id: string; name: string }>>([]);
+  const buildRawFromForm = () => {
+    const name = `${firstName} ${lastName}`.trim();
+    const raw: Record<string, any> = {
+      timestamp: '',
+      url: website || '',
+      city: '',
+      state: '',
+      name,
+      Email: email || '',
+      Phone: phone || '',
+      company: '',
+      closed_sales: '',
+      total_value: '',
+      price_range: '',
+      agent_website: website || '',
+      facebook_profile: facebook || '',
+      col_1yr_seller_total_deals: '',
+      col_1yr_seller_total_value: '',
+      col_1yr_seller_price_range: '',
+      col_1y_buyer_total_deals: '',
+      col_1y_buyer_total_value: '',
+      col_1y_buyer_price_range: '',
+      col_1y_buyer_avg_sale_price: '',
+      neighborhood_1: '',
+      neighborhood_2: '',
+      neighborhood_3: '',
+      neighborhood_4: '',
+      neighborhood_5: '',
+      neighborhood_6: '',
+      error: '',
+    };
+    return raw;
+  };
   useEffect(() => {
     // derive stages locally for modal default
     (async () => {
@@ -423,7 +456,16 @@ function ContactsTab({ contacts }: ContactsTabProps) {
             <button className="btn-primary btn-sm" onClick={()=> {
               const name = `${firstName} ${lastName}`.trim() || firstName || lastName || 'Contact';
               const cid = window.location.pathname.split('/').pop() || '';
-              const contact: any = { id: Math.random().toString(36).slice(2), name, email, phone, url: website, status: 'No Activity' as const, stageId: '', raw: { first_name: firstName, last_name: lastName, website, facebook_profile: facebook } };
+              const contact: any = {
+                id: Math.random().toString(36).slice(2),
+                name,
+                email,
+                phone,
+                url: website,
+                status: 'No Activity' as const,
+                stageId: '',
+                raw: buildRawFromForm(),
+              };
               setContactsForCampaign(cid, [contact, ...(contactsByCampaignId as any)[cid]||[]]);
               fetch(`${(import.meta as any).env?.VITE_API_URL || ''}/api/campaigns/${cid}/contacts`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(contact) }).catch(()=>{});
               setShowAddContact(false);
