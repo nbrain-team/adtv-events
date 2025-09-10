@@ -250,6 +250,21 @@ function ContactsTab({ contacts }: ContactsTabProps) {
 
   const openSms = () => { if (selectedIds.size===0) return; setSmsText(''); setShowSms(true); };
   const openEmail = () => { if (selectedIds.size===0) return; setEmailSubject(''); setEmailBody(''); setShowEmail(true); };
+  const bulkDelete = async () => {
+    if (selectedIds.size===0) return;
+    const confirm = window.confirm(`Delete ${selectedIds.size} selected contact(s)?`);
+    if (!confirm) return;
+    const cid = window.location.pathname.split('/').pop() || '';
+    const remaining = contacts.filter((c)=> !selectedIds.has(c.id));
+    setContactsForCampaign(cid, remaining as any);
+    try {
+      await fetch(`${(import.meta as any).env?.VITE_API_URL || ''}/api/campaigns/${cid}/contacts/bulk-delete`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids: Array.from(selectedIds) })
+      });
+    } catch {}
+    setSelectedIds(new Set());
+    addToast({ title: 'Contacts deleted', description: `${contacts.length - remaining.length} removed`, variant: 'success' });
+  };
 
   const sendBulkSms = async () => {
     const ids = Array.from(selectedIds);
@@ -286,7 +301,7 @@ function ContactsTab({ contacts }: ContactsTabProps) {
             ))}
           </select>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap justify-end">
           <label className="btn-outline btn-sm cursor-pointer text-center">
             <input type="file" accept=".csv" className="hidden" onChange={(ev)=> {
               const file = ev.target.files?.[0]; if (!file) return;
@@ -327,6 +342,9 @@ function ContactsTab({ contacts }: ContactsTabProps) {
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a'); a.href = url; a.download = `contacts_${cid}.csv`; a.click(); URL.revokeObjectURL(url);
           }}>Export CSV</button>
+          <button className="btn-outline btn-sm" onClick={openSms} disabled={selectedIds.size===0}>Create SMS</button>
+          <button className="btn-outline btn-sm" onClick={openEmail} disabled={selectedIds.size===0}>Create Email</button>
+          <button className="btn-outline btn-sm" onClick={bulkDelete} disabled={selectedIds.size===0}>Delete Selected</button>
           <button className="btn-primary btn-sm" onClick={()=> setShowAddContact(true)}>Add Contact</button>
         </div>
       </div>
