@@ -229,13 +229,22 @@ export function TemplateBuilder() {
           edges={edges}
           nodeTypes={nodeTypes}
           fitView
-          onNodeClick={(_, n) => setSelectedId(n.id)}
+          onNodeClick={(_, n) => {
+            setSelectedId(n.id);
+          }}
+          onPaneClick={() => {
+            // Intentionally do not clear selection to keep inspector visible
+          }}
           nodesDraggable
           nodesConnectable
           onConnect={onConnect}
           onEdgesChange={onEdgesChange}
           onNodesChange={onNodesChange}
-          onSelectionChange={(params) => setSelectedId((params.nodes && params.nodes[0] && params.nodes[0].id) || null)}
+          onSelectionChange={(params) => {
+            const first = params?.nodes && params.nodes[0];
+            if (first?.id) setSelectedId(first.id);
+            // Do not clear selection on empty to keep inspector open
+          }}
         >
           <Background gap={16} color="#f3f4f6" />
           <MiniMap nodeStrokeColor={(n) => '#9ca3af'} nodeColor={() => '#e5e7eb'} />
