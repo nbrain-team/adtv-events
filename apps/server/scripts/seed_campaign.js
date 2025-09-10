@@ -9,7 +9,7 @@ async function postJson(url, body) {
 
 async function main() {
   const csvPath = process.argv[2] || '/Users/dannydemichele/adtv-event-automation/NEW-ADTV-Homes.com 8_18 - lessgo.csv';
-  const api = 'http://localhost:4000';
+  const api = process.env.API_URL || 'http://localhost:4000';
 
   const campaign = await postJson(`${api}/api/campaigns`, {
     name: 'CSV Seeded Roadshow',
