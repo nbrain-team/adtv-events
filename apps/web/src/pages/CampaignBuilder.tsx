@@ -23,7 +23,7 @@ export function CampaignBuilder() {
     if (!campaign) return;
     if (contacts.length > 0) return;
     // Load from API if exists (keep seeded if empty)
-    fetch(`http://localhost:4000/api/campaigns/${campaign.id}/contacts`).then((r)=> r.json()).then((list)=> {
+    fetch(`${(import.meta as any).env?.VITE_API_URL || ''}/api/campaigns/${campaign.id}/contacts`).then((r)=> r.json()).then((list)=> {
       if (Array.isArray(list) && list.length>0) {
         const mapped = list.map((c: any) => ({ id: c.id, name: c.name, company: c.company, email: c.email, phone: c.phone, city: c.city, state: c.state, url: c.url, status: c.status, stageId: c.stageKey, raw: c.rawJson?JSON.parse(c.rawJson):{} }));
         setContactsForCampaign(campaign.id, mapped as any);
@@ -147,7 +147,7 @@ export function CampaignBuilder() {
                       raw: r,
                     })).slice(0, 1000);
                     setContactsForCampaign(campaign.id, mapped);
-                    fetch(`http://localhost:4000/api/campaigns/${campaign.id}/contacts/bulk`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contacts: mapped }) }).catch(()=>{});
+                    fetch(`${(import.meta as any).env?.VITE_API_URL || ''}/api/campaigns/${campaign.id}/contacts/bulk`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contacts: mapped }) }).catch(()=>{});
                     addToast({ title: 'Contacts imported', description: `${mapped.length} records`, variant: 'success' });
                   };
                   reader.readAsText(file);
@@ -171,7 +171,7 @@ export function CampaignBuilder() {
                 const stageId = (tplStages as any[]).find((s)=> s.id===(chosen.split(' - ')[0]||''))?.id || (tplStages as any[])[0]?.id || '';
                 const contact = { id: Math.random().toString(36).slice(2), name, email, phone, status: 'No Activity' as const, stageId, raw: { name, email, phone } } as any;
                 setContactsForCampaign(campaign.id, [contact, ...(contactsByCampaignId[campaign.id]||[])]);
-                fetch(`http://localhost:4000/api/campaigns/${campaign.id}/contacts`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(contact) }).catch(()=>{});
+                fetch(`${(import.meta as any).env?.VITE_API_URL || ''}/api/campaigns/${campaign.id}/contacts`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(contact) }).catch(()=>{});
                 addToast({ title: 'Contact added', description: name, variant: 'success' });
               }}>Add Contact</button>
             </div>
