@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useStore, type Campaign } from '@store/useStore';
 import { apiCampaigns, apiTemplates } from '@lib/api';
 
@@ -13,7 +13,7 @@ const PRODUCERS = [
 type Props = { open: boolean; onClose: () => void };
 
 export function CreateLiveCampaignModal({ open, onClose }: Props) {
-  const { addLiveCampaign, addToast } = useStore();
+  const { addLiveCampaign, addToast, campaigns } = useStore();
   const [name, setName] = useState('');
   const [producer, setProducer] = useState<string>('');
   const [producerPhone, setProducerPhone] = useState('');
@@ -99,10 +99,24 @@ export function CreateLiveCampaignModal({ open, onClose }: Props) {
     onClose();
   };
 
-  // Load templates once when modal opens
-  if (open && templates.length === 0) {
-    apiTemplates.list().then((list) => setTemplates(list)).catch(()=>{});
-  }
+  // Load templates when modal opens; fallback to store if API not available
+  useEffect(() => {
+    if (!open) return;
+    // prefill from local funnel templates (store)
+    try {
+      if (templates.length === 0 && Array.isArray(campaigns) && campaigns.length) {
+        setTemplates(campaigns.map((t: any) => ({ id: t.id, name: t.name })));
+      }
+    } catch {}
+    // then try backend list
+    apiTemplates
+      .list()
+      .then((list: any) => {
+        if (Array.isArray(list) && list.length) setTemplates(list);
+      })
+      .catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">

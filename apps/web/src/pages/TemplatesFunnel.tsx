@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useStore } from '@store/useStore';
 import { CreateFunnelTemplateModal } from '@components/CreateFunnelTemplateModal';
 import { apiTemplates } from '@lib/api';
@@ -75,7 +76,7 @@ export function TemplatesFunnel() {
 
       <div className="grid md:grid-cols-2 gap-4">
         {filtered.map((c) => (
-          <a key={c.id} href={`/templates/${c.id}`} className="card block hover:shadow-soft-xl transition">
+          <Link key={c.id} to={`/templates/${c.id}`} className="card block hover:shadow-soft-xl transition">
             <div className="flex items-center justify-between">
               <div>
                 <p className="font-semibold">{c.name}</p>
@@ -83,7 +84,7 @@ export function TemplatesFunnel() {
               </div>
               <span className="badge-primary">{c.graph.nodes.length} nodes</span>
             </div>
-          </a>
+          </Link>
         ))}
       </div>
 

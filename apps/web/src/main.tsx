@@ -30,7 +30,6 @@ const router = createBrowserRouter([
       { path: 'campaigns', element: <CampaignsLive /> },
       { path: 'campaigns/:id', element: <CampaignBuilder /> },
       // media and calendar removed per instruction
-      { path: 'templates', element: <Templates /> },
       { path: 'inbox', element: <Inbox /> },
       { path: 'analytics', element: <AnalyticsMaster /> },
       { path: 'realtors', element: <Realtors /> },
