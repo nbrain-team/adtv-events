@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useStore, type Campaign } from '@store/useStore';
 import { CreateLiveCampaignModal } from '@components/CreateLiveCampaignModal';
 import { apiCampaigns } from '@lib/api';
@@ -144,18 +145,23 @@ export function CampaignsLive() {
 
       <div className="grid md:grid-cols-2 gap-4">
         {filtered.map((c) => (
-          <div key={c.id} className="card">
+          <Link key={c.id} to={`/campaigns/${c.id}`} className="card block hover:shadow-soft-xl transition">
             <div className="flex items-center justify-between">
               <div>
-                <a href={`/campaigns/${c.id}`} className="font-semibold hover:underline">{c.name}</a>
+                <div className="font-semibold hover:underline">{c.name}</div>
                 <p className="text-xs text-gray-500">{c.status} · {c.event_type}</p>
               </div>
               <div className="flex items-center gap-2">
                 <span className="badge-primary">{c.total_contacts} contacts</span>
-                <button className="btn-outline btn-sm" onClick={() => deleteLiveCampaign(c.id)}>Delete</button>
+                <button
+                  className="btn-outline btn-sm"
+                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); deleteLiveCampaign(c.id); }}
+                >
+                  Delete
+                </button>
               </div>
             </div>
-          </div>
+          </Link>
         ))}
       </div>
     </div>
