@@ -346,7 +346,14 @@ function Inspector({ node, edgesOut, onChange, onChangeEdges, onDelete }: Inspec
 
   useEffect(() => { setEdgesDraft(edgesOut || []); }, [edgesOut]);
 
-  const tags = ['{{contact.first_name}}','{{contact.last_name}}','{{contact.email}}','{{contact.phone}}','{{contact.event_date}}','{{campaign.name}}','{{campaign.event_type}}'];
+  const tags = [
+    // Contact fields (commonly captured)
+    '{{contact.first_name}}','{{contact.last_name}}','{{contact.email}}','{{contact.phone}}','{{contact.website}}','{{contact.facebook_profile}}',
+    '{{contact.company}}','{{contact.city}}','{{contact.state}}','{{contact.status}}',
+    // Campaign fields (from overview)
+    '{{campaign.name}}','{{campaign.owner_name}}','{{campaign.owner_email}}','{{campaign.owner_phone}}','{{campaign.event_type}}','{{campaign.city}}','{{campaign.state}}',
+    '{{campaign.launch_date}}','{{campaign.event_date}}','{{campaign.video_link}}','{{campaign.event_link}}','{{campaign.hotel_name}}','{{campaign.hotel_address}}','{{campaign.calendly_link}}','{{campaign.sender_email}}'
+  ];
   const append = (setter: (v: string) => void, value: string, tag: string) => setter((value || '') + tag);
 
   return (

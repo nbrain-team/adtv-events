@@ -29,6 +29,7 @@ export interface Campaign {
   hotel_name?: string; hotel_address?: string; calendly_link?: string; target_cities?: string; launch_date?: string;
   status: CampaignStatus; total_contacts: number; enriched_contacts: number; emails_generated: number;
   template_id?: string;
+  sender_email?: string;
 }
 
 export type ContactStatus =

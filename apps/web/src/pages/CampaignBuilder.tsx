@@ -74,6 +74,10 @@ export function CampaignBuilder() {
                 <input className="input" defaultValue={campaign.owner_phone||''} onBlur={(e)=> updateLiveCampaign(campaign.id, { owner_phone: e.target.value })} />
               </div>
               <div>
+                <label className="label">Send From (Email)</label>
+                <input className="input" defaultValue={(campaign as any).sender_email||''} onBlur={(e)=> updateLiveCampaign(campaign.id, { sender_email: e.target.value as any })} />
+              </div>
+              <div>
                 <label className="label">Launch Date</label>
                 <input className="input" defaultValue={campaign.launch_date||''} onBlur={(e)=> { updateLiveCampaign(campaign.id, { launch_date: e.target.value }); apiCampaigns.patch(campaign.id, { launchDate: e.target.value }).catch(()=>{}); }} />
               </div>
