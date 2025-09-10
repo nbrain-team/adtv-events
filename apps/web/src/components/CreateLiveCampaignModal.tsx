@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useStore, type Campaign } from '@store/useStore';
 import { apiCampaigns, apiTemplates } from '@lib/api';
 
@@ -45,6 +46,19 @@ export function CreateLiveCampaignModal({ open, onClose }: Props) {
       if (Array.isArray(list) && list.length) setTemplates(list);
     }).catch(()=>{});
   }, [open, campaigns]);
+
+  if (!open) return null;
+
+  const combinedTemplates = (() => {
+    const storeList = Array.isArray(campaigns) ? campaigns.map((t: any) => ({ id: t.id, name: t.name })) : [];
+    const apiList = Array.isArray(templates) ? templates : [];
+    const seen = new Set<string>();
+    const merged: Array<{ id: string; name: string }> = [];
+    [...apiList, ...storeList].forEach((t) => {
+      if (t && t.id && !seen.has(t.id)) { seen.add(t.id); merged.push({ id: t.id, name: t.name }); }
+    });
+    return merged;
+  })();
 
   const addSlot = () => {
     if (slots.length >= maxSlots) return;
@@ -113,21 +127,24 @@ export function CreateLiveCampaignModal({ open, onClose }: Props) {
   // templates load handled in useEffect above
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={(e)=>{ if (e.target === e.currentTarget) onClose(); }}>
       <div className="bg-white rounded-xl shadow-soft-xl w-full max-w-3xl max-h-[85vh] flex flex-col">
         <div className="px-6 py-4 border-b flex items-center justify-between">
           <h2 className="text-lg font-semibold">Create New Campaign</h2>
-          <button className="btn-outline btn-sm" onClick={onClose}>Close</button>
+          <button type="button" className="btn-outline btn-sm" onClick={onClose}>Close</button>
         </div>
         <div className="p-6 space-y-4 overflow-y-auto">
           <div>
             <label className="label">Choose Funnel Template</label>
             <select className="input" value={templateId} onChange={(e)=> setTemplateId(e.target.value)}>
               <option value="">Select a template</option>
-              {templates.map((t)=> (
+              {combinedTemplates.map((t)=> (
                 <option key={t.id} value={t.id}>{t.name}</option>
               ))}
             </select>
+            {combinedTemplates.length === 0 && (
+              <p className="text-xs text-gray-500 mt-1">No templates yet. Go to <Link className="underline" to="/templates">Funnel Templates</Link> to create one.</p>
+            )}
           </div>
           <div>
             <label className="label">Campaign Name *</label>
@@ -223,8 +240,8 @@ export function CreateLiveCampaignModal({ open, onClose }: Props) {
           </div>
 
           <div className="flex items-center justify-between pt-2">
-            <button className="btn-outline btn-md" onClick={onClose}>Cancel</button>
-            <button className="btn-primary btn-md" onClick={submit} disabled={disabled}>Create Campaign</button>
+            <button type="button" className="btn-outline btn-md" onClick={onClose}>Cancel</button>
+            <button type="button" className="btn-primary btn-md" onClick={submit} disabled={disabled}>Create Campaign</button>
           </div>
         </div>
       </div>
