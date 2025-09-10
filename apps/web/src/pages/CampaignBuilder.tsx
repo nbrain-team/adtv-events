@@ -120,50 +120,7 @@ export function CampaignBuilder() {
               </div>
             )}
           </div>
-          <div className="card">
-            <h2 className="text-lg font-semibold mb-3">Contacts</h2>
-            <div className="grid gap-2">
-              <label className="btn-outline btn-sm cursor-pointer text-center">
-                <input type="file" accept=".csv" className="hidden" onChange={(ev)=> {
-                  const file = ev.target.files?.[0]; if (!file) return;
-                  const reader = new FileReader();
-                  reader.onload = () => {
-                    const text = String(reader.result || '');
-                    const parsed = Papa.parse(text, { header: true });
-                    const rows = (parsed.data as any[]).filter(Boolean);
-                    const tplStages = stages.length>0 ? stages : ((campaign.template_id ? campaigns.find((t)=> t.id===campaign.template_id)?.graph?.nodes : seedCampaigns[0]?.graph?.nodes) || []);
-                    const startStage = (tplStages as any[])[0]?.id || '';
-                    const mapped = rows.map((r) => ({
-                      id: Math.random().toString(36).slice(2),
-                      name: r.name || r.Name || '-',
-                      company: r.company || r.Company || '',
-                      email: r.Email || r.email || '',
-                      phone: r.Phone || r.phone || '',
-                      city: r.city || r.City || '',
-                      state: r.state || r.State || '',
-                      url: r.url,
-                      status: 'No Activity' as const,
-                      stageId: startStage,
-                      raw: r,
-                    })).slice(0, 1000);
-                    setContactsForCampaign(campaign.id, mapped);
-                    fetch(`${(import.meta as any).env?.VITE_API_URL || ''}/api/campaigns/${campaign.id}/contacts/bulk`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contacts: mapped }) }).catch(()=>{});
-                    addToast({ title: 'Contacts imported', description: `${mapped.length} records`, variant: 'success' });
-                  };
-                  reader.readAsText(file);
-                }} />
-                Import CSV
-              </label>
-              <button className="btn-outline btn-sm" onClick={()=> {
-                const list = contactsByCampaignId[campaign.id] || [];
-                const csv = ['Name,Company,Email,Phone,City,State,Status,StageId', ...list.map((c)=> [c.name,c.company,c.email,c.phone,c.city,c.state,c.status,c.stageId||''].map((v)=>`"${String(v??'').replace(/"/g,'\"')}"`).join(','))].join('\n');
-                const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a'); a.href = url; a.download = `contacts_${campaign.id}.csv`; a.click(); URL.revokeObjectURL(url);
-              }}>Export CSV</button>
-              <button className="btn-outline btn-sm" onClick={()=> setTab('Contacts')}>Add Contact</button>
-            </div>
-          </div>
+          {/* Contacts controls moved to Contacts tab per request */}
         </div>
       )}
 
@@ -293,8 +250,47 @@ function ContactsTab({ contacts }: ContactsTabProps) {
           </select>
         </div>
         <div className="flex items-center gap-2">
-          <button className="btn-outline btn-sm" disabled={selectedIds.size===0} onClick={openSms}>Create SMS</button>
-          <button className="btn-outline btn-sm" disabled={selectedIds.size===0} onClick={openEmail}>Create Email</button>
+          <label className="btn-outline btn-sm cursor-pointer text-center">
+            <input type="file" accept=".csv" className="hidden" onChange={(ev)=> {
+              const file = ev.target.files?.[0]; if (!file) return;
+              const reader = new FileReader();
+              reader.onload = () => {
+                const text = String(reader.result || '');
+                const parsed = Papa.parse(text, { header: true });
+                const rows = (parsed.data as any[]).filter(Boolean);
+                // We don't have campaign context here; derive from URL
+                const params = new URLSearchParams(window.location.search);
+                const cid = window.location.pathname.split('/').pop() || '';
+                const mapped = rows.map((r) => ({
+                  id: Math.random().toString(36).slice(2),
+                  name: r.name || r.Name || '-',
+                  company: r.company || r.Company || '',
+                  email: r.Email || r.email || '',
+                  phone: r.Phone || r.phone || '',
+                  city: r.city || r.City || '',
+                  state: r.state || r.State || '',
+                  url: r.url,
+                  status: 'No Activity' as const,
+                  stageId: '',
+                  raw: r,
+                })).slice(0, 1000);
+                setContactsForCampaign(cid, mapped as any);
+                fetch(`${(import.meta as any).env?.VITE_API_URL || ''}/api/campaigns/${cid}/contacts/bulk`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contacts: mapped }) }).catch(()=>{});
+                addToast({ title: 'Contacts imported', description: `${mapped.length} records`, variant: 'success' });
+              };
+              reader.readAsText(file);
+            }} />
+            Import CSV
+          </label>
+          <button className="btn-outline btn-sm" onClick={()=> {
+            const cid = window.location.pathname.split('/').pop() || '';
+            const list = (contactsByCampaignId as any)[cid] || [];
+            const csv = ['Name,Company,Email,Phone,City,State,Status,StageId', ...list.map((c:any)=> [c.name,c.company,c.email,c.phone,c.city,c.state,c.status,c.stageId||''].map((v:string)=>`"${String(v??'').replace(/"/g,'\"')}"`).join(','))].join('\n');
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a'); a.href = url; a.download = `contacts_${cid}.csv`; a.click(); URL.revokeObjectURL(url);
+          }}>Export CSV</button>
+          <button className="btn-primary btn-sm" onClick={()=> setShowAddContact(true)}>Add Contact</button>
         </div>
       </div>
 
@@ -385,6 +381,54 @@ function ContactsTab({ contacts }: ContactsTabProps) {
       </div>
     )}
 
+    {showAddContact && (
+      <div className="fixed inset-0 bg-black/30 flex items-center justify-center p-4 z-50" onClick={(e)=>{ if (e.target===e.currentTarget) setShowAddContact(false); }}>
+        <div className="bg-white rounded-lg shadow-lg w-full max-w-2xl p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="text-lg font-semibold">Add Contact</h3>
+            <button className="btn-outline btn-sm" onClick={()=> setShowAddContact(false)}>Close</button>
+          </div>
+          <div className="grid md:grid-cols-2 gap-3">
+            <div>
+              <label className="label">First Name</label>
+              <input className="input" value={firstName} onChange={(e)=> setFirstName(e.target.value)} />
+            </div>
+            <div>
+              <label className="label">Last Name</label>
+              <input className="input" value={lastName} onChange={(e)=> setLastName(e.target.value)} />
+            </div>
+            <div>
+              <label className="label">Email</label>
+              <input className="input" value={email} onChange={(e)=> setEmail(e.target.value)} />
+            </div>
+            <div>
+              <label className="label">Phone</label>
+              <input className="input" value={phone} onChange={(e)=> setPhone(e.target.value)} />
+            </div>
+            <div>
+              <label className="label">Website</label>
+              <input className="input" value={website} onChange={(e)=> setWebsite(e.target.value)} />
+            </div>
+            <div>
+              <label className="label">Facebook Profile</label>
+              <input className="input" value={facebook} onChange={(e)=> setFacebook(e.target.value)} />
+            </div>
+          </div>
+          <div className="flex items-center justify-end gap-2">
+            <button className="btn-outline btn-sm" onClick={()=> setShowAddContact(false)}>Cancel</button>
+            <button className="btn-primary btn-sm" onClick={()=> {
+              const name = `${firstName} ${lastName}`.trim() || firstName || lastName || 'Contact';
+              const cid = window.location.pathname.split('/').pop() || '';
+              const contact: any = { id: Math.random().toString(36).slice(2), name, email, phone, url: website, status: 'No Activity' as const, stageId: '', raw: { first_name: firstName, last_name: lastName, website, facebook_profile: facebook } };
+              setContactsForCampaign(cid, [contact, ...(contactsByCampaignId as any)[cid]||[]]);
+              fetch(`${(import.meta as any).env?.VITE_API_URL || ''}/api/campaigns/${cid}/contacts`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(contact) }).catch(()=>{});
+              setShowAddContact(false);
+              setFirstName(''); setLastName(''); setEmail(''); setPhone(''); setWebsite(''); setFacebook('');
+            }}>Add</button>
+          </div>
+        </div>
+      </div>
+    )}
     {showAddContact && (
       <div className="fixed inset-0 bg-black/30 flex items-center justify-center p-4 z-50" onClick={(e)=>{ if (e.target===e.currentTarget) setShowAddContact(false); }}>
         <div className="bg-white rounded-lg shadow-lg w-full max-w-2xl p-4 space-y-3">
