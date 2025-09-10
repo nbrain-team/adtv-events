@@ -254,7 +254,8 @@ export function TemplateBuilder() {
       </div>
 
       <div id="flow-canvas-root" className="relative left-1/2 right-1/2 -mx-[50vw] w-screen bg-white border-t border-b h-[calc(100vh-220px)]">
-        <ReactFlow
+        <div className="h-full mx-16">
+          <ReactFlow
           nodes={nodes}
           edges={edges}
           nodeTypes={nodeTypes}
@@ -275,11 +276,13 @@ export function TemplateBuilder() {
             if (first?.id) setSelectedId(first.id);
             // Do not clear selection on empty to keep inspector open
           }}
-        >
-          <Background gap={16} color="#f3f4f6" />
-          <MiniMap nodeStrokeColor={(n) => '#9ca3af'} nodeColor={() => '#e5e7eb'} />
-          <Controls />
-        </ReactFlow>
+            style={{ width: '100%', height: '100%' }}
+          >
+            <Background gap={16} color="#f3f4f6" />
+            <MiniMap nodeStrokeColor={(n) => '#9ca3af'} nodeColor={() => '#e5e7eb'} />
+            <Controls />
+          </ReactFlow>
+        </div>
       </div>
 
       <div ref={inspectorRef} className="card mt-4 max-h-[60vh] overflow-auto">
