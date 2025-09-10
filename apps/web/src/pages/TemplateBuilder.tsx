@@ -337,6 +337,8 @@ function Inspector({ node, edgesOut, onChange, onChangeEdges, onDelete }: Inspec
   const [smsText, setSmsText] = useState(node?.config?.content?.text || '');
   const [vmScript, setVmScript] = useState(node?.config?.tts?.custom_script || '');
   const [edgesDraft, setEdgesDraft] = useState<any[]>(edgesOut || []);
+  const [scheduleAfter, setScheduleAfter] = useState<string>(node?.config?.schedule?.after || '');
+  const [scheduleAtLocal, setScheduleAtLocal] = useState<string>(node?.config?.schedule?.at_local || '');
   const { contentTemplates } = useStore();
 
   const typeMap: Record<string, 'email'|'sms'|'voicemail' | undefined> = { email_send: 'email', sms_send: 'sms', voicemail_drop: 'voicemail' };
@@ -412,6 +414,18 @@ function Inspector({ node, edgesOut, onChange, onChangeEdges, onDelete }: Inspec
                   }}>{t}</button>
                 ))}
               </div>
+
+              {/* Node-level timing (send schedule) */}
+              <div className="grid md:grid-cols-2 gap-2 pt-2">
+                <div>
+                  <label className="label">Send After (e.g., PT10M or P1D)</label>
+                  <input className="input" placeholder="PT10M" value={scheduleAfter} onChange={(e)=> setScheduleAfter(e.target.value)} />
+                </div>
+                <div>
+                  <label className="label">Send At Local (HH:MM)</label>
+                  <input className="input" placeholder="08:00" value={scheduleAtLocal} onChange={(e)=> setScheduleAtLocal(e.target.value)} />
+                </div>
+              </div>
             </div>
           )}
         </div>
@@ -466,6 +480,15 @@ function Inspector({ node, edgesOut, onChange, onChangeEdges, onDelete }: Inspec
                 if (node.type==='sms_send') updated.config = { ...(node.config||{}), content: { text: smsText } };
                 if (node.type==='voicemail_drop') updated.config = { ...(node.config||{}), tts: { ...(node.config?.tts||{}), custom_script: vmScript } };
               }
+              // persist node-level schedule if provided
+              updated.config = {
+                ...(updated.config||{}),
+                schedule: {
+                  ...(updated.config?.schedule||{}),
+                  after: scheduleAfter || undefined,
+                  at_local: scheduleAtLocal || undefined,
+                }
+              };
             }
             if (node.type === 'decision') {
               updated.config = { ...(node.config||{}), rules };
