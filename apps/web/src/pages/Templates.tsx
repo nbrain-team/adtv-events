@@ -8,7 +8,7 @@ export function Templates() {
     { id: 'tmpl_sms_1', name: 'SMS 1', type: 'sms', content: 'Hi {{contact.first_name}} 👋' },
     { id: 'tmpl_vm_1', name: 'VM Script 1', type: 'voicemail', content: 'Hey there, quick invite...' },
   ]);
-  const [selected, setSelected] = useState<Template | null>(templates[0]);
+  const [selected, setSelected] = useState<Template | null>(templates[0] ?? null);
 
   const save = () => {
     if (!selected) return;

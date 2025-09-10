@@ -23,7 +23,7 @@ export function AnalyticsMaster() {
   const [data, setData] = useState<any | null>(null);
 
   useEffect(() => {
-    if (!selectedId && liveCampaigns.length) setSelectedId(liveCampaigns[0].id);
+    if (!selectedId && liveCampaigns && liveCampaigns.length) setSelectedId(liveCampaigns[0]?.id || '');
   }, [liveCampaigns, selectedId]);
 
   useEffect(() => {

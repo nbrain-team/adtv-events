@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom';
 import { useStore } from '@store/useStore';
 import ReactFlow, { Background, Controls, MiniMap, Edge, Node, Connection, addEdge, applyEdgeChanges, applyNodeChanges, Handle, Position } from 'reactflow';
 import 'reactflow/dist/style.css';
+// @ts-ignore
 import dagre from 'dagre';
 import { apiTemplates } from '@lib/api';
 
@@ -49,23 +50,23 @@ export function TemplateBuilder() {
 
   const relayout = (tpl: typeof template) => {
     if (!tpl) return;
-    const rfNodes: Node[] = tpl.graph.nodes.map((n) => ({
+    const rfNodes: Node[] = tpl.graph.nodes.map((n: any) => ({
       id: n.id,
       type: 'box',
       data: { label: n.name },
       position: { x: 0, y: 0 },
       style: { border: '1px solid #e5e7eb', padding: 8, borderRadius: 8, background: '#fff', color: '#111827' },
-      sourcePosition: 'right',
-      targetPosition: 'left',
+      sourcePosition: Position.Right,
+      targetPosition: Position.Left,
     }));
-    const rfEdges: Edge[] = tpl.graph.edges.map((e, i) => ({
+    const rfEdges: Edge[] = tpl.graph.edges.map((e: any, i: number) => ({
       id: `e${i}`,
       source: e.from,
       target: e.to,
-      label: e.condition?.label || e.condition?.after || e.condition?.on || e.condition?.at_local || '',
+      label: (e.condition?.label || e.condition?.after || e.condition?.on || e.condition?.at_local || '') as any,
       style: { stroke: '#9ca3af' },
-      labelStyle: { fill: '#6b7280', fontSize: 10, background: '#fff' },
-      animated: false,
+      labelStyle: { fill: '#6b7280', fontSize: 10 } as any,
+      animated: false as const,
     }));
 
     // Dagre autolayout
@@ -165,7 +166,7 @@ export function TemplateBuilder() {
     } as any;
     setTimeout(() => upsertCampaign(newTpl), 0);
     // update local edges for immediate feedback
-    setEdges((eds) => addEdge({ source: connection.source!, target: connection.target!, label: '' }, eds));
+    setEdges((eds) => addEdge({ id: `e_${Date.now()}`, source: connection.source!, target: connection.target!, label: '' as any }, eds));
     setTimeout(() => addToast({ title: 'Connected', description: `${connection.source} → ${connection.target}`, variant: 'success' }), 0);
   }, [template]);
 

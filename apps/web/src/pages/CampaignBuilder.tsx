@@ -26,7 +26,7 @@ export function CampaignBuilder() {
     fetch(`http://localhost:4000/api/campaigns/${campaign.id}/contacts`).then((r)=> r.json()).then((list)=> {
       if (Array.isArray(list) && list.length>0) {
         const mapped = list.map((c: any) => ({ id: c.id, name: c.name, company: c.company, email: c.email, phone: c.phone, city: c.city, state: c.state, url: c.url, status: c.status, stageId: c.stageKey, raw: c.rawJson?JSON.parse(c.rawJson):{} }));
-        setContactsForCampaign(campaign.id, mapped);
+        setContactsForCampaign(campaign.id, mapped as any);
       }
     }).catch(() => {});
   }, [campaign?.id]);
@@ -131,8 +131,8 @@ export function CampaignBuilder() {
                     const text = String(reader.result || '');
                     const parsed = Papa.parse(text, { header: true });
                     const rows = (parsed.data as any[]).filter(Boolean);
-                    const tplStages = stages.length>0 ? stages : ((campaign.template_id ? campaigns.find((t)=> t.id===campaign.template_id)?.graph.nodes : seedCampaigns[0].graph.nodes) || []);
-                    const startStage = (tplStages as any[])[0]?.id;
+                    const tplStages = stages.length>0 ? stages : ((campaign.template_id ? campaigns.find((t)=> t.id===campaign.template_id)?.graph?.nodes : seedCampaigns[0]?.graph?.nodes) || []);
+                    const startStage = (tplStages as any[])[0]?.id || '';
                     const mapped = rows.map((r) => ({
                       id: Math.random().toString(36).slice(2),
                       name: r.name || r.Name || '-',
@@ -165,10 +165,10 @@ export function CampaignBuilder() {
                 const name = window.prompt('Contact name'); if (!name) return;
                 const email = window.prompt('Email')||'';
                 const phone = window.prompt('Phone')||'';
-                const tplStages = stages.length>0 ? stages : ((campaign.template_id ? campaigns.find((t)=> t.id===campaign.template_id)?.graph.nodes : seedCampaigns[0].graph.nodes) || []);
+                const tplStages = stages.length>0 ? stages : ((campaign.template_id ? campaigns.find((t)=> t.id===campaign.template_id)?.graph?.nodes : seedCampaigns[0]?.graph?.nodes) || []);
                 const stageOptions = (tplStages as any[]).map((s)=> (s.id + ' - ' + s.name)).join('\n');
                 const chosen = window.prompt('Stage ID (leave blank for first):\n'+stageOptions)||'';
-                const stageId = (tplStages as any[]).find((s)=> s.id===chosen.split(' - ')[0])?.id || (tplStages as any[])[0]?.id;
+                const stageId = (tplStages as any[]).find((s)=> s.id===(chosen.split(' - ')[0]||''))?.id || (tplStages as any[])[0]?.id || '';
                 const contact = { id: Math.random().toString(36).slice(2), name, email, phone, status: 'No Activity' as const, stageId, raw: { name, email, phone } } as any;
                 setContactsForCampaign(campaign.id, [contact, ...(contactsByCampaignId[campaign.id]||[])]);
                 fetch(`http://localhost:4000/api/campaigns/${campaign.id}/contacts`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(contact) }).catch(()=>{});

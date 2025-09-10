@@ -44,7 +44,7 @@ export function CreateLiveCampaignModal({ open, onClose }: Props) {
     setSlots((s) => s.filter((_, i) => i !== idx));
   };
 
-  const disabled = !name || !producer || !eventType || !launchDate || !slots[0].date || !slots[0].time;
+  const disabled = !name || !producer || !eventType || !launchDate || !(slots[0]?.date) || !(slots[0]?.time);
 
   const submit = async () => {
     const id = `live_${Math.random().toString(36).slice(2)}`;
@@ -61,7 +61,7 @@ export function CreateLiveCampaignModal({ open, onClose }: Props) {
       event_link: eventLink,
       launch_date: launchDate,
       event_type: eventType as any,
-      event_date: slots[0].date,
+      event_date: slots[0]?.date || '',
       event_slots: slots.map((s) => ({ date: s.date, time: s.time, calendly_link: eventType === 'virtual' ? s.calendly : undefined })),
       target_cities: locations,
       hotel_name: eventType === 'in_person' ? hotelName : undefined,
@@ -86,7 +86,7 @@ export function CreateLiveCampaignModal({ open, onClose }: Props) {
         videoLink,
         eventLink,
         eventType: eventType,
-        eventDate: slots[0].date || new Date().toISOString().slice(0,10),
+        eventDate: (slots[0]?.date) || new Date().toISOString().slice(0,10),
         launchDate: launchDate || undefined,
         hotelName: eventType==='in_person'?hotelName: undefined,
         hotelAddress: eventType==='in_person'?hotelAddress: undefined,

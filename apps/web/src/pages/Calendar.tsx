@@ -14,9 +14,10 @@ export function Calendar() {
 
   const grouped = useMemo(() => {
     return events.reduce<Record<string, CalEvent[]>>((acc, ev) => {
-      acc[ev.date] = acc[ev.date] ? [...acc[ev.date], ev] : [ev];
+      const prev = acc[ev.date] ?? [];
+      acc[ev.date] = [...prev, ev];
       return acc;
-    }, {});
+    }, {} as Record<string, CalEvent[]>);
   }, [events]);
 
   const add = () => {
