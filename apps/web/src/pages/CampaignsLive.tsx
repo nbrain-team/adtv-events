@@ -37,7 +37,7 @@ export function CampaignsLive() {
         hotel_address: c.hotelAddress,
         calendly_link: c.calendlyLink,
         status: (c.status || 'draft') as any,
-        total_contacts: c.totalContacts ?? 0,
+        total_contacts: (typeof c.totalContacts === 'number' ? c.totalContacts : (Array.isArray(c.contacts) ? c.contacts.length : 0)) ?? 0,
         enriched_contacts: c.enrichedContacts ?? 0,
         emails_generated: c.emailsGenerated ?? 0,
       }));
