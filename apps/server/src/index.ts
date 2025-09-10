@@ -11,6 +11,7 @@ const prisma = new PrismaClient();
 
 app.use(cors());
 app.use(express.json({ limit: '2mb' }));
+app.use(express.urlencoded({ extended: true }));
 
 // Health
 app.get('/health', (_req, res) => res.json({ ok: true }));
@@ -352,6 +353,38 @@ app.post('/api/email/send', async (req, res) => {
     res.status(500).json({ error: e?.message || 'send error' });
   }
 });
+
+// Twilio inbound SMS webhook (POST x-www-form-urlencoded)
+app.post('/api/twilio/inbound-sms', async (req, res) => {
+  try {
+    const from = String(req.body.From || '').trim();
+    const to = String(req.body.To || '').trim();
+    const text = String(req.body.Body || '').trim();
+    if (!from || !text) {
+      return res.status(200).type('text/xml').send('<Response></Response>');
+    }
+    // normalize: last 10 digits to match stored formats loosely
+    const last10 = from.replace(/\D/g, '').slice(-10);
+    const contact = await prisma.contact.findFirst({
+      where: { phone: { contains: last10 } },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (contact) {
+      let convo = await prisma.conversation.findFirst({ where: { contactId: contact.id, channel: 'sms' } });
+      if (!convo) {
+        convo = await prisma.conversation.create({ data: { contactId: contact.id, channel: 'sms' } });
+      }
+      await prisma.message.create({ data: { conversationId: convo.id, direction: 'in', text } });
+      // bump status to Needs BDR
+      await prisma.contact.update({ where: { id: contact.id }, data: { status: 'Needs BDR' } });
+    }
+    // empty TwiML response
+    return res.status(200).type('text/xml').send('<Response></Response>');
+  } catch (e) {
+    return res.status(200).type('text/xml').send('<Response></Response>');
+  }
+});
+
 
 // Users
 app.post('/api/users', async (req, res) => {
