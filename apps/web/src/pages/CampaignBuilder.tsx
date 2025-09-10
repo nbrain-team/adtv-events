@@ -161,19 +161,7 @@ export function CampaignBuilder() {
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement('a'); a.href = url; a.download = `contacts_${campaign.id}.csv`; a.click(); URL.revokeObjectURL(url);
               }}>Export CSV</button>
-              <button className="btn-outline btn-sm" onClick={()=> {
-                const name = window.prompt('Contact name'); if (!name) return;
-                const email = window.prompt('Email')||'';
-                const phone = window.prompt('Phone')||'';
-                const tplStages = stages.length>0 ? stages : ((campaign.template_id ? campaigns.find((t)=> t.id===campaign.template_id)?.graph?.nodes : seedCampaigns[0]?.graph?.nodes) || []);
-                const stageOptions = (tplStages as any[]).map((s)=> (s.id + ' - ' + s.name)).join('\n');
-                const chosen = window.prompt('Stage ID (leave blank for first):\n'+stageOptions)||'';
-                const stageId = (tplStages as any[]).find((s)=> s.id===(chosen.split(' - ')[0]||''))?.id || (tplStages as any[])[0]?.id || '';
-                const contact = { id: Math.random().toString(36).slice(2), name, email, phone, status: 'No Activity' as const, stageId, raw: { name, email, phone } } as any;
-                setContactsForCampaign(campaign.id, [contact, ...(contactsByCampaignId[campaign.id]||[])]);
-                fetch(`${(import.meta as any).env?.VITE_API_URL || ''}/api/campaigns/${campaign.id}/contacts`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(contact) }).catch(()=>{});
-                addToast({ title: 'Contact added', description: name, variant: 'success' });
-              }}>Add Contact</button>
+              <button className="btn-outline btn-sm" onClick={()=> setTab('Contacts')}>Add Contact</button>
             </div>
           </div>
         </div>
@@ -214,6 +202,26 @@ function ContactsTab({ contacts }: ContactsTabProps) {
   const [smsText, setSmsText] = useState('');
   const [emailSubject, setEmailSubject] = useState('');
   const [emailBody, setEmailBody] = useState('');
+  const [showAddContact, setShowAddContact] = useState(false);
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
+  const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
+  const [website, setWebsite] = useState('');
+  const [facebook, setFacebook] = useState('');
+  const { contactsByCampaignId, setContactsForCampaign } = useStore();
+  const params = useParams();
+  const campaignId = params.id as string;
+  const [stagesLocal, setStagesLocal] = useState<Array<{ id: string; name: string }>>([]);
+  useEffect(() => {
+    // derive stages locally for modal default
+    (async () => {
+      try {
+        const g = await apiCampaigns.graph(campaignId);
+        if (g?.nodes) setStagesLocal(g.nodes.map((n: any) => ({ id: n.id, name: n.name })));
+      } catch {}
+    })();
+  }, [campaignId]);
 
   const STATUS_CLASS: Record<typeof CONTACT_STATUSES[number], string> = {
     'No Activity': 'bg-gray-100 text-gray-700 border-gray-200',
@@ -372,6 +380,57 @@ function ContactsTab({ contacts }: ContactsTabProps) {
           <div className="flex items-center justify-end gap-2">
             <button className="btn-outline btn-sm" onClick={()=> setShowEmail(false)}>Cancel</button>
             <button className="btn-primary btn-sm" disabled={!emailSubject.trim() && !emailBody.trim()} onClick={sendBulkEmail}>Send Email</button>
+          </div>
+        </div>
+      </div>
+    )}
+
+    {showAddContact && (
+      <div className="fixed inset-0 bg-black/30 flex items-center justify-center p-4 z-50" onClick={(e)=>{ if (e.target===e.currentTarget) setShowAddContact(false); }}>
+        <div className="bg-white rounded-lg shadow-lg w-full max-w-2xl p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="text-lg font-semibold">Add Contact</h3>
+            <button className="btn-outline btn-sm" onClick={()=> setShowAddContact(false)}>Close</button>
+          </div>
+          <div className="grid md:grid-cols-2 gap-3">
+            <div>
+              <label className="label">First Name</label>
+              <input className="input" value={firstName} onChange={(e)=> setFirstName(e.target.value)} />
+            </div>
+            <div>
+              <label className="label">Last Name</label>
+              <input className="input" value={lastName} onChange={(e)=> setLastName(e.target.value)} />
+            </div>
+            <div>
+              <label className="label">Email</label>
+              <input className="input" value={email} onChange={(e)=> setEmail(e.target.value)} />
+            </div>
+            <div>
+              <label className="label">Phone</label>
+              <input className="input" value={phone} onChange={(e)=> setPhone(e.target.value)} />
+            </div>
+            <div>
+              <label className="label">Website</label>
+              <input className="input" value={website} onChange={(e)=> setWebsite(e.target.value)} />
+            </div>
+            <div>
+              <label className="label">Facebook Profile</label>
+              <input className="input" value={facebook} onChange={(e)=> setFacebook(e.target.value)} />
+            </div>
+          </div>
+          <div className="flex items-center justify-end gap-2">
+            <button className="btn-outline btn-sm" onClick={()=> setShowAddContact(false)}>Cancel</button>
+            <button className="btn-primary btn-sm" onClick={()=> {
+              const name = `${firstName} ${lastName}`.trim() || firstName || lastName || 'Contact';
+              const tplStages = stagesLocal.length>0 ? stagesLocal : [];
+              const stageId = (tplStages as any[])[0]?.id || '';
+              const contact: any = { id: Math.random().toString(36).slice(2), name, email, phone, url: website, status: 'No Activity' as const, stageId, raw: { first_name: firstName, last_name: lastName, website, facebook_profile: facebook } };
+              setContactsForCampaign(campaignId, [contact, ...(contactsByCampaignId[campaignId]||[])]);
+              fetch(`${(import.meta as any).env?.VITE_API_URL || ''}/api/campaigns/${campaignId}/contacts`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(contact) }).catch(()=>{});
+              setShowAddContact(false);
+              setFirstName(''); setLastName(''); setEmail(''); setPhone(''); setWebsite(''); setFacebook('');
+              addToast({ title: 'Contact added', description: name, variant: 'success' });
+            }}>Add</button>
           </div>
         </div>
       </div>
