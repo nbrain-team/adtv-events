@@ -33,7 +33,18 @@ export function CreateLiveCampaignModal({ open, onClose }: Props) {
   const [templateId, setTemplateId] = useState('');
   const maxSlots = eventType === 'virtual' ? 3 : 2;
 
-  if (!open) return null;
+  // Load templates when modal opens; fetch from API with store fallback
+  useEffect(() => {
+    if (!open) return;
+    try {
+      if (Array.isArray(campaigns) && campaigns.length) {
+        setTemplates((prev) => (prev.length ? prev : campaigns.map((t: any) => ({ id: t.id, name: t.name }))));
+      }
+    } catch {}
+    apiTemplates.list().then((list: any) => {
+      if (Array.isArray(list) && list.length) setTemplates(list);
+    }).catch(()=>{});
+  }, [open, campaigns]);
 
   const addSlot = () => {
     if (slots.length >= maxSlots) return;
@@ -99,24 +110,7 @@ export function CreateLiveCampaignModal({ open, onClose }: Props) {
     onClose();
   };
 
-  // Load templates when modal opens; fallback to store if API not available
-  useEffect(() => {
-    if (!open) return;
-    // prefill from local funnel templates (store)
-    try {
-      if (templates.length === 0 && Array.isArray(campaigns) && campaigns.length) {
-        setTemplates(campaigns.map((t: any) => ({ id: t.id, name: t.name })));
-      }
-    } catch {}
-    // then try backend list
-    apiTemplates
-      .list()
-      .then((list: any) => {
-        if (Array.isArray(list) && list.length) setTemplates(list);
-      })
-      .catch(() => {});
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
+  // templates load handled in useEffect above
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
