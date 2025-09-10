@@ -124,9 +124,6 @@ export function CampaignsLive() {
           <p className="text-sm text-gray-600">Live campaigns per CAMPAIGN_BUILDER_SPEC</p>
         </div>
         <div className="flex gap-2">
-          <button className="btn-outline btn-md" onClick={() => replaceLiveCampaigns([])}>Clear All</button>
-          <button className="btn-outline btn-md" onClick={createMockCampaign}>One Mock (In‑Person)</button>
-          <button className="btn-outline btn-md" onClick={seedRoadshows}>Seed Roadshows</button>
           <button className="btn-primary btn-md" onClick={() => setOpen(true)}>New Campaign</button>
         </div>
       </div>
