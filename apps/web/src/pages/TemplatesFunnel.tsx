@@ -7,8 +7,7 @@ import { apiTemplates } from '@lib/api';
 export function TemplatesFunnel() {
   const { campaigns, contentTemplates, upsertContentTemplate, addToast } = useStore();
   const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState('');
-  const [status, setStatus] = useState<'all'|'draft'|'published'|'archived'>('all');
+  // Removed search and status filters per request
   const [openTpl, setOpenTpl] = useState(false);
   const [editingTplId, setEditingTplId] = useState<string | null>(null);
   const [tplType, setTplType] = useState<'email'|'sms'|'voicemail'>('email');
@@ -39,13 +38,7 @@ export function TemplatesFunnel() {
     // allow React to re-render; caret position not strictly necessary in prototype
   };
 
-  const filtered = useMemo(() => {
-    return campaigns.filter((c) => {
-      const matchesQuery = c.name.toLowerCase().includes(query.toLowerCase());
-      const matchesStatus = status === 'all' ? true : c.status === status;
-      return matchesQuery && matchesStatus;
-    });
-  }, [campaigns, query, status]);
+  const filtered = useMemo(() => campaigns, [campaigns]);
 
   const resetTplForm = () => {
     setTplType('email');
@@ -88,19 +81,11 @@ export function TemplatesFunnel() {
         </div>
       </div>
 
-      <div className="flex gap-3">
-        <input className="input" placeholder="Search templates" value={query} onChange={(e) => setQuery(e.target.value)} />
-        <select className="input w-48" value={status} onChange={(e) => setStatus(e.target.value as any)}>
-          <option value="all">All statuses</option>
-          <option value="draft">Draft</option>
-          <option value="published">Published</option>
-          <option value="archived">Archived</option>
-        </select>
-      </div>
+      {/* Filters removed */}
 
-      <div className="grid md:grid-cols-2 gap-4">
+      <div className="grid md:grid-cols-2 gap-4 mt-2">
         {filtered.map((c) => (
-          <Link key={c.id} to={`/templates/${c.id}`} className="card block hover:shadow-soft-xl transition">
+          <Link key={c.id} to={`/templates/${c.id}`} className="card block hover:shadow-soft-xl transition border border-gray-200">
             <div className="flex items-center justify-between">
               <div>
                 <p className="font-semibold">{c.name}</p>
@@ -113,16 +98,16 @@ export function TemplatesFunnel() {
       </div>
 
       {contentTemplates.length > 0 && (
-        <div className="space-y-3">
+        <div className="space-y-3 mt-10">
           <div>
             <h2 className="text-xl font-semibold">Content Templates</h2>
             <p className="text-sm text-gray-600">Click a template to view and update</p>
           </div>
-          <div className="grid md:grid-cols-2 gap-4">
+          <div className="grid md:grid-cols-2 gap-4 mt-2">
             {contentTemplates.map((t) => (
               <button
                 key={t.id}
-                className="card text-left hover:shadow-soft-xl transition"
+                className="card text-left hover:shadow-soft-xl transition border border-gray-200"
                 onClick={() => openEditTpl(t.id)}
               >
                 <div className="flex items-center justify-between">
