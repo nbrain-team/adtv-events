@@ -10,6 +10,7 @@ export function TemplatesFunnel() {
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState<'all'|'draft'|'published'|'archived'>('all');
   const [openTpl, setOpenTpl] = useState(false);
+  const [editingTplId, setEditingTplId] = useState<string | null>(null);
   const [tplType, setTplType] = useState<'email'|'sms'|'voicemail'>('email');
   const [tplName, setTplName] = useState('');
   const [tplSubject, setTplSubject] = useState('');
@@ -45,6 +46,29 @@ export function TemplatesFunnel() {
       return matchesQuery && matchesStatus;
     });
   }, [campaigns, query, status]);
+
+  const resetTplForm = () => {
+    setTplType('email');
+    setTplName('');
+    setTplSubject('');
+    setTplBody('');
+    setTplText('');
+    setTplScript('');
+    setEditingTplId(null);
+  };
+
+  const openEditTpl = (id: string) => {
+    const t = contentTemplates.find((x) => x.id === id);
+    if (!t) return;
+    setEditingTplId(t.id);
+    setTplType(t.type);
+    setTplName(t.name || '');
+    setTplSubject(t.subject || '');
+    setTplBody(t.body || '');
+    setTplText(t.text || '');
+    setTplScript(t.tts_script || '');
+    setOpenTpl(true);
+  };
 
   useEffect(() => {
     // Optionally fetch templates from backend to sync (non-blocking for static prototype)
@@ -88,14 +112,54 @@ export function TemplatesFunnel() {
         ))}
       </div>
 
+      {contentTemplates.length > 0 && (
+        <div className="space-y-3">
+          <div>
+            <h2 className="text-xl font-semibold">Content Templates</h2>
+            <p className="text-sm text-gray-600">Click a template to view and update</p>
+          </div>
+          <div className="grid md:grid-cols-2 gap-4">
+            {contentTemplates.map((t) => (
+              <button
+                key={t.id}
+                className="card text-left hover:shadow-soft-xl transition"
+                onClick={() => openEditTpl(t.id)}
+              >
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="font-semibold">{t.name}</p>
+                    <p className="text-xs text-gray-500">{t.type.toUpperCase()}</p>
+                  </div>
+                  <span className="badge-secondary">Edit</span>
+                </div>
+                <div className="mt-2 text-sm text-gray-700 line-clamp-2">
+                  {t.type === 'email' && (t.subject || t.body) && (
+                    <>
+                      {t.subject && <span className="block"><strong>Subject:</strong> {t.subject}</span>}
+                      {t.body && <span className="block opacity-80">{t.body}</span>}
+                    </>
+                  )}
+                  {t.type === 'sms' && t.text && (
+                    <span className="block opacity-80">{t.text}</span>
+                  )}
+                  {t.type === 'voicemail' && t.tts_script && (
+                    <span className="block opacity-80">{t.tts_script}</span>
+                  )}
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       <CreateFunnelTemplateModal open={open} onClose={() => setOpen(false)} />
 
       {openTpl && (
         <div className="fixed inset-0 bg-black/30 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-lg shadow-lg w-full max-w-2xl p-4 space-y-3">
             <div className="flex items-center justify-between">
-              <h3 className="text-lg font-semibold">Create Content Template</h3>
-              <button className="btn-outline btn-sm" onClick={()=> setOpenTpl(false)}>Close</button>
+              <h3 className="text-lg font-semibold">{editingTplId ? 'Edit Content Template' : 'Create Content Template'}</h3>
+              <button className="btn-outline btn-sm" onClick={()=> { resetTplForm(); setOpenTpl(false); }}>Close</button>
             </div>
 
             <div className="grid md:grid-cols-2 gap-3">
@@ -165,12 +229,13 @@ export function TemplatesFunnel() {
             )}
 
             <div className="flex items-center gap-2 justify-end">
-              <button className="btn-outline btn-sm" onClick={()=> setOpenTpl(false)}>Cancel</button>
+              <button className="btn-outline btn-sm" onClick={()=> { resetTplForm(); setOpenTpl(false); }}>Cancel</button>
               <button className="btn-primary btn-sm" onClick={()=> {
-                const id = Math.random().toString(36).slice(2);
+                const id = editingTplId || Math.random().toString(36).slice(2);
                 upsertContentTemplate({ id, type: tplType, name: tplName, subject: tplSubject, body: tplBody, text: tplText, tts_script: tplScript });
                 addToast({ title: 'Template saved', description: tplName, variant: 'success' });
-                setTplName(''); setTplSubject(''); setTplBody(''); setTplText(''); setTplScript(''); setTplType('email'); setOpenTpl(false);
+                resetTplForm();
+                setOpenTpl(false);
               }}>Save</button>
             </div>
 
@@ -179,7 +244,9 @@ export function TemplatesFunnel() {
                 <h4 className="font-semibold">Existing Content Templates</h4>
                 <ul className="list-disc pl-5 text-sm">
                   {contentTemplates.map((t)=> (
-                    <li key={t.id}>{t.type.toUpperCase()} · {t.name}</li>
+                    <li key={t.id}>
+                      <button className="link" onClick={()=> openEditTpl(t.id)}>{t.type.toUpperCase()} · {t.name}</button>
+                    </li>
                   ))}
                 </ul>
               </div>
