@@ -10,11 +10,37 @@ import {
   ArcElement,
   Tooltip,
   Legend,
+  ChartOptions,
 } from 'chart.js';
 import { apiCampaigns } from '@lib/api';
 import { useStore } from '@store/useStore';
 
-ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, BarElement, ArcElement, Tooltip, Legend);
+// Simple needle plugin for gauge-style doughnut
+const needlePlugin = {
+  id: 'gaugeNeedle',
+  afterDatasetDraw(chart: any, args: any, pluginOptions: any) {
+    const { ctx, data, chartArea: { width, height } } = chart;
+    const dataset = data.datasets[0];
+    const value = dataset?.data?.[0]?.value ?? dataset?.data?.[0] ?? 0;
+    const max = (dataset as any)?.maxValue ?? 100;
+    const angle = Math.PI + (value / Math.max(max, 1)) * Math.PI; // half circle
+    const cx = width / 2 + chart.getDatasetMeta(0).data[0].x - width / 2;
+    const cy = chart.getDatasetMeta(0).data[0].y; // center y
+    const r = Math.min(width, height) / 2 * 0.8;
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(angle);
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(r, 0);
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = '#374151';
+    ctx.stroke();
+    ctx.restore();
+  }
+};
+
+ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, BarElement, ArcElement, Tooltip, Legend, needlePlugin as any);
 
 export function AnalyticsMaster() {
   const { liveCampaigns } = useStore();
@@ -50,6 +76,59 @@ export function AnalyticsMaster() {
     const colors = ['#6b7280','#f59e0b','#3b82f6','#10b981','#6366f1','#a855f7','#ec4899','#14b8a6','#22c55e'];
     return { labels, datasets: [{ label: 'Contacts', data: values, backgroundColor: colors.slice(0, values.length) }] };
   }, [data]);
+
+  // Gauge helpers (half-doughnut)
+  const buildGauge = (value: number, max: number, label: string) => {
+    const pct = Math.min(value / Math.max(max, 1), 1);
+    // Three ranges: red 0-25%, yellow 25-60%, green 60-100%
+    const red = Math.min(pct, 0.25);
+    const yellow = Math.max(Math.min(pct - 0.25, 0.35), 0);
+    const green = Math.max(pct - 0.60, 0);
+    const remain = 1 - (red + yellow + green);
+    const seg = [red, yellow, green, remain].map((p) => Math.max(p, 0) * 100);
+    return {
+      data: {
+        labels: ['Low','Med','High','Remaining'],
+        datasets: [
+          {
+            data: seg,
+            backgroundColor: ['#ef4444','#f59e0b','#4ade80','#e5e7eb'],
+            borderWidth: 0,
+            circumference: 180,
+            rotation: 180,
+            // custom for needle
+            maxValue: max,
+            // store value for plugin
+            dataElementType: 'arc',
+            // embed the actual numeric value in first datum for plugin
+            // @ts-ignore
+            dataValue: value,
+          } as any,
+        ],
+      },
+      options: {
+        cutout: '70%',
+        plugins: {
+          legend: { display: false },
+          tooltip: { enabled: false },
+        },
+      } as ChartOptions<'doughnut'>,
+      centerText: { label, value },
+      max,
+    };
+  };
+
+  const overallReach = data?.totals?.contacts ?? 0;
+  const overallImpressions = data?.totals?.messages ?? 0;
+  const overallEngagement = (data?.recentMessages || []).filter((m: any)=> m.direction==='in').length;
+  const frequency = overallReach > 0 ? Math.round((overallImpressions / overallReach) * 10) / 10 : 0;
+
+  const gauges = [
+    buildGauge(overallReach, 40000, 'Reach'),
+    buildGauge(overallImpressions, 40000, 'Impressions'),
+    buildGauge(overallEngagement, 15000, 'Post Engagement'),
+    buildGauge(Math.min(frequency, 12), 12, 'Frequency'),
+  ];
 
   const kpis = [
     { label: 'Contacts', value: data?.totals?.contacts ?? 0 },
@@ -91,23 +170,37 @@ export function AnalyticsMaster() {
             ))}
           </div>
 
+          {/* Overall Account Metrics */}
+          <div className="card">
+            <h3 className="font-semibold mb-4">Overall Account Metrics</h3>
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+              {gauges.map((g, i) => (
+                <div key={i} className="flex flex-col items-center justify-center">
+                  <div className="w-full max-w-xs">
+                    <Doughnut data={g.data as any} options={g.options as any} />
+                  </div>
+                  <div className="-mt-6 text-center">
+                    <p className="text-xs uppercase text-gray-500 tracking-wider">{g.centerText.label}</p>
+                    <p className="text-lg font-semibold">{g.centerText.value.toLocaleString()}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
           <div className="grid md:grid-cols-3 gap-4">
-            <div className="card md:col-span-2">
+            <div className="card md:col-span-3">
               <h3 className="font-semibold mb-2">Messages by Day (30d)</h3>
               <Line data={lineData} options={{ responsive: true, plugins: { legend: { position: 'bottom' } }, scales: { x: { ticks: { maxTicksLimit: 10 } } } }} />
-            </div>
-            <div className="card">
-              <h3 className="font-semibold mb-2">Contact Status Breakdown</h3>
-              <Doughnut data={statusData} options={{ plugins: { legend: { position: 'bottom' } } }} />
             </div>
           </div>
 
           <div className="card">
-            <h3 className="font-semibold mb-2">Recent Messages</h3>
+            <h3 className="font-semibold mb-2">Performance By Post</h3>
             <ul className="text-sm space-y-2 max-h-64 overflow-auto">
-              {(data?.recentMessages || []).map((m: any) => (
+              {(data?.recentMessages || []).filter((m: any)=> m.direction==='out').slice(0,5).map((m: any) => (
                 <li key={m.id} className="flex items-start gap-2">
-                  <span className={`badge-${m.direction==='in'?'gray':'primary'}`}>{m.direction}</span>
+                  <span className="badge-primary">OUT</span>
                   <span className="text-gray-500">{new Date(m.time).toLocaleString()}:</span>
                   <span>{m.text}</span>
                 </li>
