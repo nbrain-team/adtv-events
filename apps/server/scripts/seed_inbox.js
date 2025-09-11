@@ -23,10 +23,6 @@ async function postJson(url, body) {
   return res.json();
 }
 
-async function bulkCreateContacts(api, campaignId, contacts) {
-  return postJson(`${api}/api/campaigns/${campaignId}/contacts/bulk`, { contacts });
-}
-
 async function postForm(url, form) {
   const res = await fetch(url, {
     method: 'POST',
@@ -69,21 +65,7 @@ async function main() {
   const emailContacts = contacts.filter((c) => !c.phone && c.email);
 
   const smsSample = pick(smsContacts, Math.min(6, smsContacts.length));
-  let emailSample = pick(emailContacts, Math.min(4, emailContacts.length));
-
-  // If there are no email-only contacts, create a few demo ones so the inbox shows email interception
-  if (!emailSample.length) {
-    const demoContacts = Array.from({ length: 3 }).map((_, i) => ({
-      name: `Inbox Demo ${i + 1}`,
-      email: `inbox-demo-${i + 1}@example.com`,
-      status: 'No Activity',
-      stageId: null,
-      raw: { source: 'seed_inbox' },
-    }));
-    await bulkCreateContacts(api, campaignId, demoContacts);
-    const refreshed = await getJson(`${api}/api/campaigns/${campaignId}/contacts`);
-    emailSample = refreshed.filter((c) => !c.phone && c.email).slice(0, 3);
-  }
+  const emailSample = pick(emailContacts, Math.min(4, emailContacts.length));
 
   // Seed SMS: create an outbound, then simulate inbound via Twilio webhook
   const smsOutboundTemplates = [

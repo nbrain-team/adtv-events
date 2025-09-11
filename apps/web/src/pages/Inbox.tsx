@@ -42,9 +42,11 @@ export function Inbox() {
             })
           );
         });
+        // filter out demo contacts explicitly
+        const cleaned = mapped.filter((a) => !/^Inbox Demo\b/i.test(a.contact.name || ''));
         // newest first
-        mapped.sort((a, b) => dayjs(b.time).valueOf() - dayjs(a.time).valueOf());
-        setActivities(mapped);
+        cleaned.sort((a, b) => dayjs(b.time).valueOf() - dayjs(a.time).valueOf());
+        setActivities(cleaned);
       })
       .catch(() => {
         setActivities([]);
