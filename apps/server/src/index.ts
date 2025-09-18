@@ -67,6 +67,21 @@ app.post('/api/sms/send', async (req, res) => {
   }
 });
 
+// Check Twilio message status
+app.get('/api/sms/status/:sid', async (req, res) => {
+  try {
+    const { TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN } = process.env as any;
+    if (!TWILIO_ACCOUNT_SID || !TWILIO_AUTH_TOKEN) {
+      return res.status(400).json({ error: 'Missing Twilio env' });
+    }
+    const client = twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN);
+    const m = await client.messages(req.params.sid).fetch();
+    res.json({ sid: m.sid, status: m.status, to: m.to, from: m.from, errorCode: m.errorCode, errorMessage: m.errorMessage });
+  } catch (e: any) {
+    res.status(500).json({ error: e?.message || 'status error' });
+  }
+});
+
 app.use(cors());
 app.use(express.json({ limit: '2mb' }));
 app.use(express.urlencoded({ extended: true }));
