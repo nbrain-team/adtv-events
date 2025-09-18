@@ -1,4 +1,19 @@
 export function Settings() {
+  const testSend = async () => {
+    const num = window.prompt('Enter phone number (E.164 or US local)');
+    if (!num) return;
+    try {
+      const res = await fetch(`${(import.meta as any).env?.VITE_API_URL || ''}/api/sms/send`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ to: num, text: 'ADTV test from Settings' })
+      });
+      const data = await res.json().catch(()=>({}));
+      alert(res.ok ? `Sent (or simulated). Details: ${JSON.stringify(data)}` : `Send failed: ${JSON.stringify(data)}`);
+    } catch (e) {
+      alert('Send error');
+    }
+  };
   return (
     <div className="space-y-6">
       <div>
@@ -33,7 +48,10 @@ export function Settings() {
             </div>
             <div>
               <label className="label">Twilio</label>
-              <input className="input" placeholder="Account SID (mock)" />
+              <div className="flex items-center gap-2">
+                <input className="input flex-1" placeholder="Send test SMS…" defaultValue="+17604940404" />
+                <button className="btn-primary btn-sm" onClick={testSend}>Send Test</button>
+              </div>
             </div>
             <div>
               <label className="label">Calendly</label>
