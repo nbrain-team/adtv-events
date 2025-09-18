@@ -75,6 +75,16 @@ export function Inbox() {
     return activities.filter((a) => (filter === 'all' ? true : a.channel === filter) && (campaignFilter==='all' ? true : a.campaignId === campaignFilter));
   }, [activities, filter, campaignFilter]);
 
+  useEffect(() => {
+    // If filtering removes the selected item, clear selection to avoid mismatch UI
+    if (selectedId && !filtered.some((a) => a.id === selectedId)) {
+      setSelectedId(filtered[0]?.id || '');
+    }
+    if (!selectedId && filtered.length === 0) {
+      setSelectedId('');
+    }
+  }, [filtered, selectedId]);
+
   const loadCandidates = async (campaignId: string, q: string) => {
     if (!campaignId || q.trim().length < 1) { setComposeCandidates([]); return; }
     try {
@@ -113,19 +123,23 @@ export function Inbox() {
   return (
     <div className="grid md:grid-cols-3 gap-6">
       <div className="md:col-span-1">
-        <div className="flex items-center justify-between mb-3">
-          <h1 className="text-xl font-semibold">Inbox</h1>
-          <div className="flex items-center gap-2">
-            <select className="input w-36" value={filter} onChange={(e) => setFilter(e.target.value as any)}>
+        <div className="mb-3">
+          <div className="flex items-center justify-between">
+            <h1 className="text-xl font-semibold">Inbox</h1>
+          </div>
+          <div className="mt-2 grid grid-cols-2 gap-2">
+            <select className="input w-full" value={filter} onChange={(e) => setFilter(e.target.value as any)}>
               <option value="all">All</option>
               <option value="sms">SMS</option>
               <option value="email">Email</option>
             </select>
-            <select className="input w-40" value={campaignFilter} onChange={(e)=> setCampaignFilter(e.target.value)}>
+            <select className="input w-full" value={campaignFilter} onChange={(e)=> setCampaignFilter(e.target.value)}>
               <option value="all">All Campaigns</option>
               {liveCampaigns.map((c: any)=> (<option key={c.id} value={c.id}>{c.name}</option>))}
             </select>
-            <button className="btn-primary btn-sm" onClick={()=> { setComposeOpen(true); setComposeType('sms'); setComposeCampaignId(''); setComposeContact(null); setComposeContactQuery(''); setComposeCandidates([]); setComposeSubject(''); setComposeBody(''); }}>Create Message</button>
+          </div>
+          <div className="mt-2">
+            <button className="btn-primary btn-sm w-full" onClick={()=> { setComposeOpen(true); setComposeType('sms'); setComposeCampaignId(''); setComposeContact(null); setComposeContactQuery(''); setComposeCandidates([]); setComposeSubject(''); setComposeBody(''); }}>Create Message</button>
           </div>
         </div>
         <div className="card divide-y divide-gray-100 p-0">
@@ -148,7 +162,7 @@ export function Inbox() {
 
       <div className="md:col-span-2">
         {!selected ? (
-          <div className="card text-gray-500">Select a message.</div>
+          <div className="card text-gray-500 min-h-[300px] flex items-center justify-center">Select a message.</div>
         ) : (
           <div className="space-y-4">
             <div className="card">
