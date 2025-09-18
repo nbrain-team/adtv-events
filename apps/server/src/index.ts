@@ -12,7 +12,10 @@ const prisma = new PrismaClient();
 // Outbound SMS via Twilio
 app.post('/api/sms/send', async (req, res) => {
   try {
-    const body = z.object({ to: z.string().optional(), text: z.string().min(1), contactId: z.string().optional() }).parse(req.body);
+    const candidate: any = (typeof (req as any).body === 'string'
+      ? (()=> { try { return JSON.parse((req as any).body || '{}'); } catch { return {}; } })()
+      : ((req as any).body && Object.keys((req as any).body||{}).length ? (req as any).body : (req as any).query)) || {};
+    const body = z.object({ to: z.string().optional(), text: z.string().min(1), contactId: z.string().optional() }).parse(candidate);
     let toNumber = body.to || '';
     if (!toNumber && body.contactId) {
       const contact = await prisma.contact.findUnique({ where: { id: body.contactId } });
