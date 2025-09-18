@@ -40,6 +40,12 @@ export function CampaignBuilder() {
     }).catch(()=>{});
   }, [campaign?.id]);
 
+  const setStatus = async (status: any) => {
+    updateLiveCampaign(campaign.id, { status });
+    try { await apiCampaigns.patch(campaign.id, { status }); } catch {}
+    addToast({ title: 'Campaign updated', description: `Status: ${status}`, variant: 'success' });
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -124,7 +130,27 @@ export function CampaignBuilder() {
               </div>
             )}
           </div>
-          {/* Contacts controls moved to Contacts tab per request */}
+          <div className="card h-max">
+            <h3 className="font-semibold mb-3">Campaign Controls</h3>
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-gray-600">Status:</span>
+                <span className="badge-primary text-xs">{campaign.status}</span>
+              </div>
+              <div className="grid grid-cols-1 gap-2">
+                {campaign.status !== 'active' && (
+                  <button className="btn-primary btn-md" onClick={()=> setStatus('active')}>{campaign.status==='paused' ? 'Resume Campaign' : 'Send / Activate Campaign'}</button>
+                )}
+                {campaign.status === 'active' && (
+                  <button className="btn-outline btn-md" onClick={()=> setStatus('paused')}>Pause Campaign</button>
+                )}
+                {campaign.status !== 'stopped' && (
+                  <button className="btn-outline btn-md" onClick={()=> setStatus('stopped')}>Stop Campaign</button>
+                )}
+              </div>
+              <p className="text-xs text-gray-500">Activation begins executing the attached funnel for all contacts on schedule. Pause will temporarily halt sends. Stop ends the campaign.</p>
+            </div>
+          </div>
         </div>
       )}
 

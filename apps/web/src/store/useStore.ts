@@ -19,7 +19,7 @@ export type CampaignMeta = {
   hotelAddress?: string;
 };
 
-export type CampaignStatus = 'draft' | 'enriching' | 'ready_for_personalization' | 'generating_emails' | 'ready_to_send';
+export type CampaignStatus = 'draft' | 'enriching' | 'ready_for_personalization' | 'generating_emails' | 'ready_to_send' | 'active' | 'paused' | 'stopped';
 export type EventType = 'virtual' | 'in_person';
 export interface EventSlot { date: string; time: string; calendly_link?: string }
 export interface Campaign {
