@@ -17,6 +17,7 @@
     "nodemailer": "^7.0.6",
     "papaparse": "^5.4.1",
     "prisma": "^5.17.0",
+    "twilio": "^4.22.0",
     "zod": "^3.23.8"
   },
   "devDependencies": {

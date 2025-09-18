@@ -4,7 +4,7 @@ import { useParams } from 'react-router-dom';
 import { useStore } from '@store/useStore';
 import Papa from 'papaparse';
 import { seedCampaigns } from '@seed/campaignSeed';
-import { apiCampaigns, apiInbox, apiEmail } from '@lib/api';
+import { apiCampaigns, apiInbox, apiEmail, apiSms } from '@lib/api';
 
 const tabs = ['Overview','Contacts','Analytics','Map View'] as const;
 
@@ -150,6 +150,7 @@ export function CampaignBuilder() {
     </div>
   );
 }
+
 type ContactsTabProps = { contacts: ReturnType<typeof useStore.getState>['contactsByCampaignId'][string] };
 
 function ContactsTab({ contacts }: ContactsTabProps) {
@@ -271,7 +272,7 @@ function ContactsTab({ contacts }: ContactsTabProps) {
     await Promise.all(ids.map(async (id) => {
       const c = contacts.find((x)=> x.id===id);
       if (!c || !c.phone) return;
-      try { await apiInbox.sendMessage({ contactId: c.id, text: smsText, direction: 'out' }); } catch {}
+      try { await apiSms.send({ to: c.phone, text: smsText, contactId: c.id }); } catch {}
     }));
     setShowSms(false);
     addToast({ title: 'SMS sent', description: `${selectedIds.size} selected`, variant: 'success' });

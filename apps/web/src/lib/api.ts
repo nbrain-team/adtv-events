@@ -46,6 +46,10 @@ export const apiEmail = {
   send: (payload: { to: string; subject: string; body: string; userId?: string; contactId?: string }) => sendJson('POST', '/api/email/send', payload),
 };
 
+export const apiSms = {
+  send: (payload: { to: string; text: string; contactId?: string }) => sendJson('POST', '/api/sms/send', payload),
+};
+
 export { API_URL };
 
 

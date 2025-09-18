@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
 import { useStore } from '@store/useStore';
-import { apiInbox } from '@lib/api';
+import { apiInbox, apiSms } from '@lib/api';
 
 type Channel = 'sms' | 'email';
 type Direction = 'inbound' | 'outbound';
@@ -64,8 +64,17 @@ export function Inbox() {
     return activities.filter((a) => (filter === 'all' ? true : a.channel === filter));
   }, [activities, filter]);
 
-  const sendReply = () => {
+  const sendReply = async () => {
     if (!selected) return;
+    // Persist to backend first
+    try {
+      if (selected.channel === 'sms') {
+        // We don't have the phone number in activity; rely on server to route by contactId
+        await apiSms.send({ to: '', text: reply, contactId: selected.contact.id });
+      } else {
+        await apiInbox.sendMessage({ contactId: selected.contact.id, text: reply, direction: 'out' });
+      }
+    } catch {}
     const outbound: Activity = {
       id: Math.random().toString(36).slice(2),
       contact: selected.contact,
@@ -76,8 +85,6 @@ export function Inbox() {
       time: new Date().toISOString(),
     };
     setActivities((s) => [outbound, ...s]);
-    // Persist to backend if a conversation exists
-    apiInbox.sendMessage({ contactId: selected.contact.id, text: reply, direction: 'out' }).catch(()=>{});
     setReply('');
     addToast({ title: 'Reply sent', description: `Responded to ${selected.contact.name}`, variant: 'success' });
   };

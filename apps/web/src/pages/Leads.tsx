@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import React from 'react';
-import { apiCampaigns, apiEmail, apiInbox } from '@lib/api';
+import { apiCampaigns, apiEmail, apiInbox, apiSms } from '@lib/api';
 
 const CONTACT_STATUSES = ['No Activity','Needs BDR','Received RSVP','Showed Up To Event','Post Event #1','Post Event #2','Post Event #3','Received Agreement','Signed Agreement'] as const;
 
@@ -98,7 +98,7 @@ export function Leads() {
     await Promise.all(ids.map(async (id) => {
       const c = all.find((x)=> x.id===id);
       if (!c || !c.phone) return;
-      try { await apiInbox.sendMessage({ contactId: c.id, text: smsText, direction: 'out' }); } catch {}
+      try { await apiSms.send({ to: c.phone, text: smsText, contactId: c.id }); } catch {}
     }));
     setShowSms(false);
   };

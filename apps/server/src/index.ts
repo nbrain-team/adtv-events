@@ -3,11 +3,53 @@ import cors from 'cors';
 import { PrismaClient } from '@prisma/client';
 import { z } from 'zod';
 import nodemailer from 'nodemailer';
+import twilio from 'twilio';
 import dotenv from 'dotenv';
 dotenv.config();
 
 const app = express();
 const prisma = new PrismaClient();
+// Outbound SMS via Twilio
+app.post('/api/sms/send', async (req, res) => {
+  try {
+    const body = z.object({ to: z.string().optional(), text: z.string().min(1), contactId: z.string().optional() }).parse(req.body);
+    const { TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM_NUMBER, TWILIO_MESSAGING_SERVICE_SID } = process.env as any;
+    if (!TWILIO_ACCOUNT_SID || !TWILIO_AUTH_TOKEN || (!TWILIO_FROM_NUMBER && !TWILIO_MESSAGING_SERVICE_SID)) {
+      return res.status(400).json({ error: 'Missing Twilio env: TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, and TWILIO_FROM_NUMBER or TWILIO_MESSAGING_SERVICE_SID' });
+    }
+    const client = twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN);
+    let toNumber = body.to || '';
+    if (!toNumber && body.contactId) {
+      const contact = await prisma.contact.findUnique({ where: { id: body.contactId } });
+      toNumber = contact?.phone || '';
+    }
+    // normalize E.164 best-effort for US numbers
+    if (toNumber && !/^\+\d+$/i.test(toNumber)) {
+      const digits = toNumber.replace(/\D/g, '');
+      if (digits.length === 10) toNumber = `+1${digits}`;
+      else if (digits.length === 11 && digits.startsWith('1')) toNumber = `+${digits}`;
+    }
+    if (!toNumber) {
+      return res.status(400).json({ error: 'Missing destination number' });
+    }
+    const msg = await client.messages.create({
+      to: toNumber,
+      from: TWILIO_MESSAGING_SERVICE_SID ? undefined : TWILIO_FROM_NUMBER,
+      messagingServiceSid: TWILIO_MESSAGING_SERVICE_SID || undefined,
+      body: body.text,
+    });
+    if (body.contactId) {
+      let convo = await prisma.conversation.findFirst({ where: { contactId: body.contactId, channel: 'sms' } });
+      if (!convo) {
+        convo = await prisma.conversation.create({ data: { contactId: body.contactId, channel: 'sms' } });
+      }
+      await prisma.message.create({ data: { conversationId: convo.id, direction: 'out', text: body.text } });
+    }
+    res.json({ ok: true, sid: msg.sid });
+  } catch (e: any) {
+    res.status(500).json({ error: e?.message || 'send error' });
+  }
+});
 
 app.use(cors());
 app.use(express.json({ limit: '2mb' }));
