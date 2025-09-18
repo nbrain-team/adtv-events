@@ -189,6 +189,42 @@ app.post('/api/campaigns/:id/contacts', async (req, res) => {
   res.json(created);
 });
 
+// Update contact
+app.patch('/api/contacts/:id', async (req, res) => {
+  try {
+    const body = z.object({
+      name: z.string().optional(),
+      company: z.string().optional(),
+      email: z.string().nullable().optional(),
+      phone: z.string().nullable().optional(),
+      city: z.string().nullable().optional(),
+      state: z.string().nullable().optional(),
+      url: z.string().nullable().optional(),
+      status: z.string().optional(),
+      stageId: z.string().nullable().optional(),
+      raw: z.any().optional(),
+    }).parse(req.body);
+    const updated = await prisma.contact.update({
+      where: { id: req.params.id },
+      data: {
+        name: body.name as any,
+        company: body.company as any,
+        email: (body.email ?? undefined) as any,
+        phone: (body.phone ?? undefined) as any,
+        city: (body.city ?? undefined) as any,
+        state: (body.state ?? undefined) as any,
+        url: (body.url ?? undefined) as any,
+        status: body.status as any,
+        stageKey: (body.stageId ?? undefined) as any,
+        rawJson: body.raw ? JSON.stringify(body.raw) : undefined,
+      },
+    });
+    res.json(updated);
+  } catch (e: any) {
+    res.status(400).json({ error: e?.message || 'update error' });
+  }
+});
+
 // Campaign graph
 app.get('/api/campaigns/:id/graph', async (req, res) => {
   const [nodes, edges] = await Promise.all([

@@ -190,6 +190,10 @@ function ContactsTab({ contacts }: ContactsTabProps) {
   const [smsText, setSmsText] = useState('');
   const [emailSubject, setEmailSubject] = useState('');
   const [emailBody, setEmailBody] = useState('');
+  const { contactsByCampaignId, setContactsForCampaign } = useStore();
+  const params = useParams();
+  const campaignId = params.id as string;
+  const [stagesLocal, setStagesLocal] = useState<Array<{ id: string; name: string }>>([]);
   const [showAddContact, setShowAddContact] = useState(false);
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
@@ -197,10 +201,8 @@ function ContactsTab({ contacts }: ContactsTabProps) {
   const [phone, setPhone] = useState('');
   const [website, setWebsite] = useState('');
   const [facebook, setFacebook] = useState('');
-  const { contactsByCampaignId, setContactsForCampaign } = useStore();
-  const params = useParams();
-  const campaignId = params.id as string;
-  const [stagesLocal, setStagesLocal] = useState<Array<{ id: string; name: string }>>([]);
+  const [editContactId, setEditContactId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState<any>({ name: '', email: '', phone: '', company: '', city: '', state: '', url: '', status: 'No Activity', stageId: '' });
   const buildRawFromForm = () => {
     const name = `${firstName} ${lastName}`.trim();
     const raw: Record<string, any> = {
@@ -408,7 +410,10 @@ function ContactsTab({ contacts }: ContactsTabProps) {
                   <td className="py-2">
                     <span className={`inline-flex items-center px-2 py-0.5 rounded border text-xs font-medium ${STATUS_CLASS[c.status as keyof typeof STATUS_CLASS]}`}>{c.status}</span>
                   </td>
-                  <td className="py-2 text-xs">{(c as any).stageId || '-'}</td>
+                  <td className="py-2 text-xs flex items-center gap-2" onClick={(e)=> e.stopPropagation()}>
+                    <span>{(c as any).stageId || '-'}</span>
+                    <button className="btn-outline btn-xs" onClick={()=> { setEditContactId(c.id); setEditForm({ name: c.name, email: c.email||'', phone: c.phone||'', company: c.company||'', city: c.city||'', state: c.state||'', url: c.url||'', status: c.status, stageId: (c as any).stageId||'' }); }}>Edit</button>
+                  </td>
                 </tr>
                 {expandedId===c.id && (
                   <tr className="bg-gray-50/50">
@@ -464,109 +469,42 @@ function ContactsTab({ contacts }: ContactsTabProps) {
       </div>
     )}
 
-    {showAddContact && (
-      <div className="fixed inset-0 bg-black/30 flex items-center justify-center p-4 z-50" onClick={(e)=>{ if (e.target===e.currentTarget) setShowAddContact(false); }}>
+    {editContactId && (
+      <div className="fixed inset-0 bg-black/30 flex items-center justify-center p-4 z-50" onClick={(e)=>{ if (e.target===e.currentTarget) setEditContactId(null); }}>
         <div className="bg-white rounded-lg shadow-lg w-full max-w-2xl p-4 space-y-3">
           <div className="flex items-center justify-between">
-            <h3 className="text-lg font-semibold">Add Contact</h3>
-            <button className="btn-outline btn-sm" onClick={()=> setShowAddContact(false)}>Close</button>
+            <h3 className="text-lg font-semibold">Edit Contact</h3>
+            <button className="btn-outline btn-sm" onClick={()=> setEditContactId(null)}>Close</button>
           </div>
           <div className="grid md:grid-cols-2 gap-3">
+            {['name','email','phone','company','city','state','url'].map((k)=> (
+              <div key={k} className={k==='url'?'md:col-span-2':''}>
+                <label className="label">{k.replace(/_/g,' ').replace(/\b\w/g, (m)=> m.toUpperCase())}</label>
+                <input className="input" value={editForm[k]||''} onChange={(e)=> setEditForm((f:any)=> ({ ...f, [k]: e.target.value }))} />
+              </div>
+            ))}
             <div>
-              <label className="label">First Name</label>
-              <input className="input" value={firstName} onChange={(e)=> setFirstName(e.target.value)} />
+              <label className="label">Status</label>
+              <select className="input" value={editForm.status} onChange={(e)=> setEditForm((f:any)=> ({ ...f, status: e.target.value }))}>
+                {(CONTACT_STATUSES as any).map((s: string)=> (<option key={s} value={s}>{s}</option>))}
+              </select>
             </div>
             <div>
-              <label className="label">Last Name</label>
-              <input className="input" value={lastName} onChange={(e)=> setLastName(e.target.value)} />
-            </div>
-            <div>
-              <label className="label">Email</label>
-              <input className="input" value={email} onChange={(e)=> setEmail(e.target.value)} />
-            </div>
-            <div>
-              <label className="label">Phone</label>
-              <input className="input" value={phone} onChange={(e)=> setPhone(e.target.value)} />
-            </div>
-            <div>
-              <label className="label">Website</label>
-              <input className="input" value={website} onChange={(e)=> setWebsite(e.target.value)} />
-            </div>
-            <div>
-              <label className="label">Facebook Profile</label>
-              <input className="input" value={facebook} onChange={(e)=> setFacebook(e.target.value)} />
+              <label className="label">Stage</label>
+              <input className="input" value={editForm.stageId||''} onChange={(e)=> setEditForm((f:any)=> ({ ...f, stageId: e.target.value }))} />
             </div>
           </div>
           <div className="flex items-center justify-end gap-2">
-            <button className="btn-outline btn-sm" onClick={()=> setShowAddContact(false)}>Cancel</button>
-            <button className="btn-primary btn-sm" onClick={()=> {
-              const name = `${firstName} ${lastName}`.trim() || firstName || lastName || 'Contact';
-              const cid = window.location.pathname.split('/').pop() || '';
-              const contact: any = {
-                id: Math.random().toString(36).slice(2),
-                name,
-                email,
-                phone,
-                url: website,
-                status: 'No Activity' as const,
-                stageId: '',
-                raw: buildRawFromForm(),
-              };
-              setContactsForCampaign(cid, [contact, ...(contactsByCampaignId as any)[cid]||[]]);
-              fetch(`${(import.meta as any).env?.VITE_API_URL || ''}/api/campaigns/${cid}/contacts`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(contact) }).catch(()=>{});
-              setShowAddContact(false);
-              setFirstName(''); setLastName(''); setEmail(''); setPhone(''); setWebsite(''); setFacebook('');
-            }}>Add</button>
-          </div>
-        </div>
-      </div>
-    )}
-    {showAddContact && (
-      <div className="fixed inset-0 bg-black/30 flex items-center justify-center p-4 z-50" onClick={(e)=>{ if (e.target===e.currentTarget) setShowAddContact(false); }}>
-        <div className="bg-white rounded-lg shadow-lg w-full max-w-2xl p-4 space-y-3">
-          <div className="flex items-center justify-between">
-            <h3 className="text-lg font-semibold">Add Contact</h3>
-            <button className="btn-outline btn-sm" onClick={()=> setShowAddContact(false)}>Close</button>
-          </div>
-          <div className="grid md:grid-cols-2 gap-3">
-            <div>
-              <label className="label">First Name</label>
-              <input className="input" value={firstName} onChange={(e)=> setFirstName(e.target.value)} />
-            </div>
-            <div>
-              <label className="label">Last Name</label>
-              <input className="input" value={lastName} onChange={(e)=> setLastName(e.target.value)} />
-            </div>
-            <div>
-              <label className="label">Email</label>
-              <input className="input" value={email} onChange={(e)=> setEmail(e.target.value)} />
-            </div>
-            <div>
-              <label className="label">Phone</label>
-              <input className="input" value={phone} onChange={(e)=> setPhone(e.target.value)} />
-            </div>
-            <div>
-              <label className="label">Website</label>
-              <input className="input" value={website} onChange={(e)=> setWebsite(e.target.value)} />
-            </div>
-            <div>
-              <label className="label">Facebook Profile</label>
-              <input className="input" value={facebook} onChange={(e)=> setFacebook(e.target.value)} />
-            </div>
-          </div>
-          <div className="flex items-center justify-end gap-2">
-            <button className="btn-outline btn-sm" onClick={()=> setShowAddContact(false)}>Cancel</button>
-            <button className="btn-primary btn-sm" onClick={()=> {
-              const name = `${firstName} ${lastName}`.trim() || firstName || lastName || 'Contact';
-              const tplStages = stagesLocal.length>0 ? stagesLocal : [];
-              const stageId = (tplStages as any[])[0]?.id || '';
-              const contact: any = { id: Math.random().toString(36).slice(2), name, email, phone, url: website, status: 'No Activity' as const, stageId, raw: { first_name: firstName, last_name: lastName, website, facebook_profile: facebook } };
-              setContactsForCampaign(campaignId, [contact, ...(contactsByCampaignId[campaignId]||[])]);
-              fetch(`${(import.meta as any).env?.VITE_API_URL || ''}/api/campaigns/${campaignId}/contacts`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(contact) }).catch(()=>{});
-              setShowAddContact(false);
-              setFirstName(''); setLastName(''); setEmail(''); setPhone(''); setWebsite(''); setFacebook('');
-              addToast({ title: 'Contact added', description: name, variant: 'success' });
-            }}>Add</button>
+            <button className="btn-outline btn-sm" onClick={()=> setEditContactId(null)}>Cancel</button>
+            <button className="btn-primary btn-sm" onClick={async ()=> {
+              try {
+                await fetch(`${(import.meta as any).env?.VITE_API_URL || ''}/api/contacts/${editContactId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(editForm) });
+              } catch {}
+              const updated = (contactsByCampaignId as any)[campaignId]?.map((c:any)=> c.id===editContactId ? { ...c, ...editForm } : c) || [];
+              setContactsForCampaign(campaignId, updated);
+              setEditContactId(null);
+              addToast({ title: 'Contact updated', description: editForm.name, variant: 'success' });
+            }}>Save</button>
           </div>
         </div>
       </div>

@@ -36,6 +36,10 @@ export const apiCampaigns = {
   stats: (id: string) => getJson(`/api/campaigns/${id}/stats`),
 };
 
+export const apiContacts = {
+  update: (id: string, payload: any) => sendJson('PATCH', `/api/contacts/${id}`, payload),
+};
+
 // Inbox
 export const apiInbox = {
   conversations: () => getJson('/api/conversations'),
@@ -47,7 +51,7 @@ export const apiEmail = {
 };
 
 export const apiSms = {
-  send: (payload: { to: string; text: string; contactId?: string }) => sendJson('POST', '/api/sms/send', payload),
+  send: (payload: { to?: string; text: string; contactId?: string }) => sendJson('POST', '/api/sms/send', payload),
 };
 
 export { API_URL };
