@@ -298,7 +298,8 @@ function ContactsTab({ contacts }: ContactsTabProps) {
     await Promise.all(ids.map(async (id) => {
       const c = contacts.find((x)=> x.id===id);
       if (!c || !c.phone) return;
-      try { await apiSms.send({ to: c.phone, text: smsText, contactId: c.id }); } catch {}
+      try { await apiSms.send({ to: c.phone, text: smsText, contactId: c.id }); }
+      catch { try { await apiInbox.sendMessage({ contactId: c.id, text: smsText, direction: 'out' }); } catch {} }
     }));
     setShowSms(false);
     addToast({ title: 'SMS sent', description: `${selectedIds.size} selected`, variant: 'success' });

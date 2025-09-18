@@ -13,11 +13,6 @@ const prisma = new PrismaClient();
 app.post('/api/sms/send', async (req, res) => {
   try {
     const body = z.object({ to: z.string().optional(), text: z.string().min(1), contactId: z.string().optional() }).parse(req.body);
-    const { TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM_NUMBER, TWILIO_MESSAGING_SERVICE_SID } = process.env as any;
-    if (!TWILIO_ACCOUNT_SID || !TWILIO_AUTH_TOKEN || (!TWILIO_FROM_NUMBER && !TWILIO_MESSAGING_SERVICE_SID)) {
-      return res.status(400).json({ error: 'Missing Twilio env: TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, and TWILIO_FROM_NUMBER or TWILIO_MESSAGING_SERVICE_SID' });
-    }
-    const client = twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN);
     let toNumber = body.to || '';
     if (!toNumber && body.contactId) {
       const contact = await prisma.contact.findUnique({ where: { id: body.contactId } });
@@ -32,20 +27,38 @@ app.post('/api/sms/send', async (req, res) => {
     if (!toNumber) {
       return res.status(400).json({ error: 'Missing destination number' });
     }
-    const msg = await client.messages.create({
-      to: toNumber,
-      from: TWILIO_MESSAGING_SERVICE_SID ? undefined : TWILIO_FROM_NUMBER,
-      messagingServiceSid: TWILIO_MESSAGING_SERVICE_SID || undefined,
-      body: body.text,
-    });
+    // Ensure conversation exists and log message regardless of Twilio status (so Inbox shows activity)
+    let convoId: string | null = null;
     if (body.contactId) {
       let convo = await prisma.conversation.findFirst({ where: { contactId: body.contactId, channel: 'sms' } });
-      if (!convo) {
-        convo = await prisma.conversation.create({ data: { contactId: body.contactId, channel: 'sms' } });
-      }
-      await prisma.message.create({ data: { conversationId: convo.id, direction: 'out', text: body.text } });
+      if (!convo) convo = await prisma.conversation.create({ data: { contactId: body.contactId, channel: 'sms' } });
+      convoId = convo.id;
     }
-    res.json({ ok: true, sid: msg.sid });
+
+    const { TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM_NUMBER, TWILIO_MESSAGING_SERVICE_SID } = process.env as any;
+    let sent = false;
+    let sid: string | undefined;
+    if (TWILIO_ACCOUNT_SID && TWILIO_AUTH_TOKEN && (TWILIO_FROM_NUMBER || TWILIO_MESSAGING_SERVICE_SID)) {
+      try {
+        const client = twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN);
+        const msg = await client.messages.create({
+          to: toNumber,
+          from: TWILIO_MESSAGING_SERVICE_SID ? undefined : TWILIO_FROM_NUMBER,
+          messagingServiceSid: TWILIO_MESSAGING_SERVICE_SID || undefined,
+          body: body.text,
+        });
+        sent = true;
+        sid = msg.sid;
+      } catch (e) {
+        // fall through to record locally
+      }
+    }
+
+    if (convoId) {
+      await prisma.message.create({ data: { conversationId: convoId, direction: 'out', text: body.text } });
+    }
+
+    res.json({ ok: true, sent, sid, simulated: !sent });
   } catch (e: any) {
     res.status(500).json({ error: e?.message || 'send error' });
   }

@@ -70,7 +70,8 @@ export function Inbox() {
     try {
       if (selected.channel === 'sms') {
         // We don't have the phone number in activity; rely on server to route by contactId
-        await apiSms.send({ to: '', text: reply, contactId: selected.contact.id });
+        try { await apiSms.send({ to: '', text: reply, contactId: selected.contact.id }); }
+        catch { await apiInbox.sendMessage({ contactId: selected.contact.id, text: reply, direction: 'out' }); }
       } else {
         await apiInbox.sendMessage({ contactId: selected.contact.id, text: reply, direction: 'out' });
       }
