@@ -54,6 +54,11 @@ export const apiSms = {
   send: (payload: { to?: string; text: string; contactId?: string }) => sendJson('POST', '/api/sms/send', payload),
 };
 
+export const apiVoicemail = {
+  drop: (payload: { to?: string; contactId?: string; audioUrl?: string; ttsScript?: string; callerId?: string; scheduleAt?: string; campaignId?: string }) =>
+    sendJson('POST', '/api/voicemail/drop', payload),
+};
+
 export { API_URL };
 
 

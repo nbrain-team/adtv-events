@@ -4,12 +4,16 @@ import { PrismaClient } from '@prisma/client';
 import { z } from 'zod';
 import nodemailer from 'nodemailer';
 import twilio from 'twilio';
+import { sendSms } from './services/smsProvider';
+import { sendVoicemailDrop } from './services/voicemailProvider';
+import { generateTtsMp3 } from './services/elevenLabs';
+import { storeVoicemailMp3, getVoicemailMp3 } from './services/mediaStore';
 import dotenv from 'dotenv';
 dotenv.config();
 
 const app = express();
 const prisma = new PrismaClient();
-// Outbound SMS via Twilio
+// Outbound SMS via provider adapter (Bonzo/Twilio)
 app.post('/api/sms/send', async (req, res) => {
   try {
     const candidate: any = (typeof (req as any).body === 'string'
@@ -38,30 +42,15 @@ app.post('/api/sms/send', async (req, res) => {
       convoId = convo.id;
     }
 
-    const { TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM_NUMBER, TWILIO_MESSAGING_SERVICE_SID } = process.env as any;
-    let sent = false;
-    let sid: string | undefined;
-    if (TWILIO_ACCOUNT_SID && TWILIO_AUTH_TOKEN && (TWILIO_FROM_NUMBER || TWILIO_MESSAGING_SERVICE_SID)) {
-      try {
-        const client = twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN);
-        const msg = await client.messages.create({
-          to: toNumber,
-          from: TWILIO_MESSAGING_SERVICE_SID ? undefined : TWILIO_FROM_NUMBER,
-          messagingServiceSid: TWILIO_MESSAGING_SERVICE_SID || undefined,
-          body: body.text,
-        });
-        sent = true;
-        sid = msg.sid;
-      } catch (e) {
-        // fall through to record locally
-      }
-    }
+    const result = await sendSms({ to: toNumber, text: body.text });
+    const sent = result.sent;
+    const sid = result.sid;
 
     if (convoId) {
       await prisma.message.create({ data: { conversationId: convoId, direction: 'out', text: body.text } });
     }
 
-    res.json({ ok: true, sent, sid, simulated: !sent });
+    res.json({ ok: true, sent, sid, provider: (process.env.SMS_PROVIDER||'').toLowerCase()|| (sent ? 'twilio' : 'mock'), simulated: !sent });
   } catch (e: any) {
     res.status(500).json({ error: e?.message || 'send error' });
   }
@@ -88,6 +77,15 @@ app.use(express.urlencoded({ extended: true }));
 
 // Health
 app.get('/health', (_req, res) => res.json({ ok: true }));
+
+// Serve temp-hosted TTS mp3s (in-memory, ephemeral). Not for production.
+app.get('/media/vm/:id.mp3', async (req, res) => {
+  const buf = getVoicemailMp3(String(req.params.id || ''));
+  if (!buf) return res.status(404).end();
+  res.setHeader('Content-Type', 'audio/mpeg');
+  res.setHeader('Cache-Control', 'public, max-age=86400');
+  res.send(buf);
+});
 
 // Templates
 app.get('/api/templates', async (_req, res) => {
@@ -491,6 +489,92 @@ app.post('/api/twilio/inbound-sms', async (req, res) => {
     return res.status(200).type('text/xml').send('<Response></Response>');
   } catch (e) {
     return res.status(200).type('text/xml').send('<Response></Response>');
+  }
+});
+
+// Bonzo inbound SMS webhook (JSON or form). Map to our conversation log.
+app.post('/api/bonzo/inbound-sms', async (req, res) => {
+  try {
+    const token = process.env.BONZO_WEBHOOK_TOKEN;
+    if (token) {
+      const provided = (req.headers['x-bonzo-token'] || req.query.token || req.body?.token || '').toString();
+      if (!provided || provided !== token) return res.status(401).json({ ok: false });
+    }
+    const from = String((req.body && (req.body.from || req.body.From)) || '').trim();
+    const text = String((req.body && (req.body.text || req.body.body || req.body.Body)) || '').trim();
+    if (!from || !text) return res.status(200).json({ ok: true });
+    const last10 = from.replace(/\D/g, '').slice(-10);
+    const contact = await prisma.contact.findFirst({ where: { phone: { contains: last10 } }, orderBy: { createdAt: 'desc' } });
+    if (contact) {
+      let convo = await prisma.conversation.findFirst({ where: { contactId: contact.id, channel: 'sms' } });
+      if (!convo) convo = await prisma.conversation.create({ data: { contactId: contact.id, channel: 'sms' } });
+      await prisma.message.create({ data: { conversationId: convo.id, direction: 'in', text } });
+      await prisma.contact.update({ where: { id: contact.id }, data: { status: 'Needs BDR' } });
+    }
+    return res.status(200).json({ ok: true });
+  } catch (_e) {
+    return res.status(200).json({ ok: true });
+  }
+});
+
+// Voicemail: generate via ElevenLabs (optional) and drop via Slybroadcast
+app.post('/api/voicemail/drop', async (req, res) => {
+  try {
+    const candidate: any = (typeof (req as any).body === 'string'
+      ? (()=> { try { return JSON.parse((req as any).body || '{}'); } catch { return {}; } })()
+      : ((req as any).body && Object.keys((req as any).body||{}).length ? (req as any).body : (req as any).query)) || {};
+    const body = z.object({
+      to: z.string().optional(),
+      contactId: z.string().optional(),
+      audioUrl: z.string().url().optional(),
+      ttsScript: z.string().optional(),
+      callerId: z.string().optional(),
+      scheduleAt: z.string().optional(),
+      campaignId: z.string().optional(),
+    }).parse(candidate);
+
+    let toNumber = body.to || '';
+    if (!toNumber && body.contactId) {
+      const contact = await prisma.contact.findUnique({ where: { id: body.contactId } });
+      toNumber = contact?.phone || '';
+    }
+    if (!toNumber) return res.status(400).json({ error: 'Missing destination number' });
+
+    let audioUrl = body.audioUrl || '';
+    if (!audioUrl && body.ttsScript) {
+      const tts = await generateTtsMp3({ script: body.ttsScript });
+      if (tts.ok && tts.audioUrl) {
+        // Convert data URL to Buffer and host at /media
+        if (tts.audioUrl.startsWith('data:audio/mpeg;base64,')) {
+          const b64 = tts.audioUrl.replace('data:audio/mpeg;base64,', '');
+          const buf = Buffer.from(b64, 'base64');
+          const id = storeVoicemailMp3(buf);
+          const base = (process.env.PUBLIC_BASE_URL || ((req.headers['x-forwarded-proto'] || req.protocol) + '://' + req.get('host')));
+          audioUrl = `${String(base).replace(/\/$/, '')}/media/vm/${id}.mp3`;
+        } else {
+          audioUrl = tts.audioUrl;
+        }
+      }
+    }
+
+    const result = await sendVoicemailDrop({
+      to: toNumber,
+      audioUrl: audioUrl || undefined,
+      callerId: body.callerId,
+      scheduleAt: body.scheduleAt,
+      campaignId: body.campaignId,
+    });
+
+    // Log as message in conversation if contactId present
+    if (body.contactId) {
+      let convo = await prisma.conversation.findFirst({ where: { contactId: body.contactId, channel: 'sms' } });
+      if (!convo) convo = await prisma.conversation.create({ data: { contactId: body.contactId, channel: 'sms' } });
+      await prisma.message.create({ data: { conversationId: convo.id, direction: 'out', text: `[Voicemail drop queued]` } });
+    }
+
+    res.json({ ok: result.queued, provider: result.provider, id: result.id, raw: result.raw });
+  } catch (e: any) {
+    res.status(500).json({ error: e?.message || 'voicemail error' });
   }
 });
 

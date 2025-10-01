@@ -14,6 +14,21 @@ export function Settings() {
       alert('Send error');
     }
   };
+  const testVoicemail = async () => {
+    const num = window.prompt('Enter phone number for voicemail drop (US local or E.164)');
+    if (!num) return;
+    try {
+      const res = await fetch(`${(import.meta as any).env?.VITE_API_URL || ''}/api/voicemail/drop`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ to: num, ttsScript: 'Hey, this is ADTV with a quick invite. Call me back when you can!' })
+      });
+      const data = await res.json().catch(()=>({}));
+      alert(res.ok ? `Queued (or simulated). Details: ${JSON.stringify(data)}` : `Drop failed: ${JSON.stringify(data)}`);
+    } catch (e) {
+      alert('Drop error');
+    }
+  };
   return (
     <div className="space-y-6">
       <div>
@@ -51,6 +66,13 @@ export function Settings() {
               <div className="flex items-center gap-2">
                 <input className="input flex-1" placeholder="Send test SMS…" defaultValue="+17604940404" />
                 <button className="btn-primary btn-sm" onClick={testSend}>Send Test</button>
+              </div>
+            </div>
+            <div>
+              <label className="label">Voicemail Drop (Slybroadcast)</label>
+              <div className="flex items-center gap-2">
+                <input className="input flex-1" placeholder="Queue test voicemail…" defaultValue="+17604940404" />
+                <button className="btn-primary btn-sm" onClick={testVoicemail}>Queue Test</button>
               </div>
             </div>
             <div>
