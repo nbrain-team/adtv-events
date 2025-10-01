@@ -48,13 +48,16 @@ export async function sendSms(input: SendSmsInput): Promise<SendSmsResult> {
       // fall through to mock if missing config
     } else {
       const url = `${baseUrl.replace(/\/$/, '')}${sendPath}`;
+      // Bonzo webhook often expects `message`; include both for compatibility.
       const body = {
         to,
         from: fromNumber || undefined,
+        message: input.text,
         text: input.text,
       } as any;
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
+        'Accept': 'application/json',
       };
       if (authHeader) {
         headers[authHeader] = authScheme ? `${authScheme} ${apiKey}` : apiKey;
@@ -66,6 +69,8 @@ export async function sendSms(input: SendSmsInput): Promise<SendSmsResult> {
       });
       if (!res.ok) {
         const raw = await res.text().catch(() => '');
+        // eslint-disable-next-line no-console
+        console.error('Bonzo send failed', { status: res.status, url, body, raw });
         return { sent: false, provider: 'bonzo', raw };
       }
       const data = await res.json().catch(() => ({}));
