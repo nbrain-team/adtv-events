@@ -25,8 +25,11 @@ function normalizePhoneToUS(input: string): string {
 
 // Minimal Slybroadcast integration (v3 HTTP API)
 // Docs reference: https://www.slybroadcast.com/ (account API section)
-async function doFetch(url: string, init?: any) {
-  const f: any = (globalThis as any).fetch || (await import('node-fetch')).default;
+function doFetch(url: string, init?: any) {
+  const f: any = (globalThis as any).fetch;
+  if (!f) {
+    throw new Error('Global fetch not available in runtime');
+  }
   return f(url, init);
 }
 
