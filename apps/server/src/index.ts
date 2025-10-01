@@ -12,6 +12,9 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 const app = express();
+app.use(cors());
+app.use(express.json({ limit: '2mb' }));
+app.use(express.urlencoded({ extended: true }));
 const prisma = new PrismaClient();
 // Outbound SMS via provider adapter (Bonzo/Twilio)
 app.post('/api/sms/send', async (req, res) => {
@@ -71,9 +74,7 @@ app.get('/api/sms/status/:sid', async (req, res) => {
   }
 });
 
-app.use(cors());
-app.use(express.json({ limit: '2mb' }));
-app.use(express.urlencoded({ extended: true }));
+
 
 // Health
 app.get('/health', (_req, res) => res.json({ ok: true }));
