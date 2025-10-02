@@ -5,6 +5,7 @@ import { z } from 'zod';
 import nodemailer from 'nodemailer';
 import twilio from 'twilio';
 import { sendSms } from './services/smsProvider';
+import { createProspect as bonzoCreateProspect, optInProspect as bonzoOptIn } from './services/bonzoApi';
 import { sendVoicemailDrop } from './services/voicemailProvider';
 import { generateTtsMp3 } from './services/elevenLabs';
 import { storeVoicemailMp3, getVoicemailMp3 } from './services/mediaStore';
@@ -234,6 +235,14 @@ app.post('/api/campaigns/:id/contacts/bulk', async (req, res) => {
 app.post('/api/campaigns/:id/contacts', async (req, res) => {
   const c = z.object({ name: z.string(), email: z.string().optional(), phone: z.string().optional(), status: z.string().optional(), stageId: z.string().optional(), raw: z.any().optional() }).parse(req.body);
   const created = await prisma.contact.create({ data: { campaignId: req.params.id, name: c.name, email: c.email, phone: c.phone, status: c.status||'No Activity', stageKey: c.stageId||null, rawJson: c.raw?JSON.stringify(c.raw):null } });
+  // Create Bonzo prospect and opt in for SMS (best-effort)
+  try {
+    const names = String(c.name||'').split(' ');
+    const first = names.shift() || 'Prospect';
+    const last = names.join(' ') || '';
+    const createdProspect = await bonzoCreateProspect({ firstName: first, lastName: last, email: c.email, phone: c.phone, externalId: created.id });
+    if (createdProspect?.id) await bonzoOptIn(createdProspect.id, 'sms');
+  } catch {}
   // Ensure conversation exists
   const existing = await prisma.conversation.findFirst({ where: { contactId: created.id } });
   if (!existing) {
