@@ -147,6 +147,14 @@ export function CampaignBuilder() {
                 {campaign.status !== 'stopped' && (
                   <button className="btn-outline btn-md" onClick={()=> setStatus('stopped')}>Stop Campaign</button>
                 )}
+                <button className="btn-outline btn-md" onClick={async ()=> {
+                  try {
+                    await fetch(`${(import.meta as any).env?.VITE_API_URL || ''}/api/campaigns/${campaign.id}/execute-sms`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) });
+                    addToast({ title: 'SMS queued', description: 'Funnel SMS nodes executed for all contacts', variant: 'success' });
+                  } catch (e) {
+                    addToast({ title: 'Failed to queue SMS', description: String((e as any)?.message||'error'), variant: 'error' });
+                  }
+                }}>Run Funnel SMS Now</button>
               </div>
               <p className="text-xs text-gray-500">Activation begins executing the attached funnel for all contacts on schedule. Pause will temporarily halt sends. Stop ends the campaign.</p>
             </div>

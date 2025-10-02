@@ -169,6 +169,42 @@ app.post('/api/campaigns', async (req, res) => {
   res.json(created);
 });
 
+// Execute SMS nodes for a campaign (minimal executor)
+app.post('/api/campaigns/:id/execute-sms', async (req, res) => {
+  try {
+    const body = z.object({ nodeKey: z.string().optional(), text: z.string().optional() }).parse(req.body || {});
+    const campaignId = req.params.id;
+    const [nodes, contacts] = await Promise.all([
+      prisma.campaignNode.findMany({ where: { campaignId } }),
+      prisma.contact.findMany({ where: { campaignId } }),
+    ]);
+    const smsNodes = nodes.filter((n) => n.type === 'sms_send' && (!body.nodeKey || n.key === body.nodeKey));
+    if (smsNodes.length === 0) return res.json({ ok: true, sent: 0 });
+    let total = 0;
+    for (const contact of contacts) {
+      const toNumber = (contact.phone || '').trim();
+      if (!toNumber) continue;
+      const msgText = body.text || (() => {
+        // try to derive text from first sms node config
+        try {
+          const cfg = smsNodes[0].configJson ? JSON.parse(smsNodes[0].configJson) : {};
+          return (cfg.text || cfg.message || '').toString();
+        } catch { return ''; }
+      })() || `Hi ${contact.name || ''}`.trim();
+
+      const result = await sendSms({ to: toNumber, text: msgText });
+      // Ensure conversation and log message
+      let convo = await prisma.conversation.findFirst({ where: { contactId: contact.id, channel: 'sms' } });
+      if (!convo) convo = await prisma.conversation.create({ data: { contactId: contact.id, channel: 'sms' } });
+      await prisma.message.create({ data: { conversationId: convo.id, direction: 'out', text: msgText } });
+      if (result.sent) total++;
+    }
+    res.json({ ok: true, sent: total });
+  } catch (e: any) {
+    res.status(400).json({ error: e?.message || 'execute error' });
+  }
+});
+
 app.patch('/api/campaigns/:id', async (req, res) => {
   const body = z.object({ name: z.string().optional(), ownerName: z.string().optional(), ownerEmail: z.string().optional(), ownerPhone: z.string().optional(), city: z.string().optional(), state: z.string().optional(), videoLink: z.string().optional(), eventLink: z.string().optional(), eventType: z.string().optional(), eventDate: z.string().optional(), launchDate: z.string().optional(), hotelName: z.string().optional(), hotelAddress: z.string().optional(), calendlyLink: z.string().optional(), status: z.string().optional(), templateId: z.string().optional() }).partial().parse(req.body);
   const updated = await prisma.campaign.update({ where: { id: req.params.id }, data: { ...body, eventDate: body.eventDate ? new Date(body.eventDate) : undefined, launchDate: body.launchDate ? new Date(body.launchDate) : undefined } });
