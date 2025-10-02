@@ -48,13 +48,21 @@ export async function sendSms(input: SendSmsInput): Promise<SendSmsResult> {
       // fall through to mock if missing config
     } else {
       const url = `${baseUrl.replace(/\/$/, '')}${sendPath}`;
-      // Bonzo webhook often expects `message`; include both for compatibility.
-      const body = {
-        to,
-        from: fromNumber || undefined,
-        message: input.text,
-        text: input.text,
-      } as any;
+      const isV3 = /\/v3(\/|$)/.test(sendPath);
+      // Use Bonzo v3 payload when targeting their v3 API; otherwise legacy payload
+      const body = (isV3
+        ? {
+            first_name: 'Contact',
+            phone: to,
+            message: input.text,
+            send_as: 'owner',
+          }
+        : {
+            to,
+            from: fromNumber || undefined,
+            message: input.text,
+            text: input.text,
+          }) as any;
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
@@ -74,7 +82,8 @@ export async function sendSms(input: SendSmsInput): Promise<SendSmsResult> {
         return { sent: false, provider: 'bonzo', raw };
       }
       const data = await res.json().catch(() => ({}));
-      const sid = (data && (data.id || data.sid)) ? (data.id || data.sid) : undefined;
+      // v3 responds as { data: { id, ... } }
+      const sid = (data && (data.id || data.sid || (data.data && data.data.id))) ? (data.id || data.sid || (data.data && data.data.id)) : undefined;
       return { sent: true, provider: 'bonzo', sid, raw: data };
     }
   }
