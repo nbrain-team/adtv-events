@@ -251,6 +251,41 @@ app.post('/api/campaigns/:id/contacts', async (req, res) => {
   res.json(created);
 });
 
+// Backfill: create Bonzo prospects and opt-in for all contacts (optionally by campaignId)
+app.post('/api/bonzo/backfill', async (req, res) => {
+  try {
+    const campaignId = (req.query?.campaignId as string | undefined) || undefined;
+    const where: any = campaignId ? { campaignId } : {};
+    const contacts = await prisma.contact.findMany({ where });
+    // Preload campaigns to attach source name
+    const campaignIds = Array.from(new Set(contacts.map((c) => c.campaignId).filter(Boolean))) as string[];
+    const campaigns = campaignIds.length ? await prisma.campaign.findMany({ where: { id: { in: campaignIds } } }) : [];
+    const idToCampaign: Record<string, { id: string; name: string }> = {};
+    campaigns.forEach((c: any) => { idToCampaign[c.id] = { id: c.id, name: c.name }; });
+
+    let createdCount = 0;
+    let optedCount = 0;
+    for (const ct of contacts) {
+      if (!ct.phone && !ct.email) continue;
+      const names = String(ct.name||'').split(' ');
+      const first = names.shift() || 'Prospect';
+      const last = names.join(' ') || '';
+      const src = ct.campaignId && idToCampaign[ct.campaignId] ? `ADTV:${idToCampaign[ct.campaignId].name}` : 'ADTV';
+      try {
+        const p = await bonzoCreateProspect({ firstName: first, lastName: last, email: ct.email || undefined, phone: ct.phone || undefined, externalId: `${ct.id}` });
+        if (p?.id) {
+          createdCount++;
+          const ok = await bonzoOptIn(p.id, 'sms');
+          if (ok) optedCount++;
+        }
+      } catch {}
+    }
+    res.json({ ok: true, processed: contacts.length, created: createdCount, optedIn: optedCount });
+  } catch (e: any) {
+    res.status(500).json({ error: e?.message || 'backfill error' });
+  }
+});
+
 // Update contact
 app.patch('/api/contacts/:id', async (req, res) => {
   try {
