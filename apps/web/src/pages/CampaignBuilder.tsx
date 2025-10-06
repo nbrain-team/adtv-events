@@ -517,6 +517,63 @@ function ContactsTab({ contacts }: ContactsTabProps) {
         </div>
       </div>
     )}
+
+    {showAddContact && (
+      <div className="fixed inset-0 bg-black/30 flex items-center justify-center p-4 z-50" onClick={(e)=>{ if (e.target===e.currentTarget) setShowAddContact(false); }}>
+        <div className="bg-white rounded-lg shadow-lg w-full max-w-2xl p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="text-lg font-semibold">Add Contact</h3>
+            <button className="btn-outline btn-sm" onClick={()=> setShowAddContact(false)}>Close</button>
+          </div>
+          <div className="grid md:grid-cols-2 gap-3">
+            <div>
+              <label className="label">First Name</label>
+              <input className="input" value={firstName} onChange={(e)=> setFirstName(e.target.value)} />
+            </div>
+            <div>
+              <label className="label">Last Name</label>
+              <input className="input" value={lastName} onChange={(e)=> setLastName(e.target.value)} />
+            </div>
+            <div>
+              <label className="label">Email</label>
+              <input className="input" value={email} onChange={(e)=> setEmail(e.target.value)} />
+            </div>
+            <div>
+              <label className="label">Phone</label>
+              <input className="input" value={phone} onChange={(e)=> setPhone(e.target.value)} />
+            </div>
+            <div className="md:col-span-2">
+              <label className="label">Website</label>
+              <input className="input" value={website} onChange={(e)=> setWebsite(e.target.value)} />
+            </div>
+            <div className="md:col-span-2">
+              <label className="label">Facebook</label>
+              <input className="input" value={facebook} onChange={(e)=> setFacebook(e.target.value)} />
+            </div>
+          </div>
+          <div className="flex items-center justify-end gap-2">
+            <button className="btn-outline btn-sm" onClick={()=> setShowAddContact(false)}>Cancel</button>
+            <button className="btn-primary btn-sm" onClick={async ()=> {
+              const cid = window.location.pathname.split('/').pop() || '';
+              const name = `${firstName} ${lastName}`.trim() || (email || phone || 'Contact');
+              const payload: any = { name, email: email||undefined, phone: phone||undefined, status: 'No Activity', raw: buildRawFromForm() };
+              try {
+                const res = await fetch(`${(import.meta as any).env?.VITE_API_URL || ''}/api/campaigns/${cid}/contacts`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+                const created = await res.json();
+                const next = [
+                  { id: created.id, name: created.name, company: '', email: created.email, phone: created.phone, city: '', state: '', url: website||'', status: created.status||'No Activity', stageId: '', raw: payload.raw },
+                  ...((contactsByCampaignId as any)[cid] || [])
+                ];
+                setContactsForCampaign(cid, next);
+                setShowAddContact(false);
+              } catch (e) {
+                addToast({ title: 'Failed to add contact', description: String((e as any)?.message||'error'), variant: 'error' });
+              }
+            }}>Add</button>
+          </div>
+        </div>
+      </div>
+    )}
     </>
   );
 }
