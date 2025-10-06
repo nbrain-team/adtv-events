@@ -10,6 +10,9 @@ import { sendVoicemailDrop } from './services/voicemailProvider';
 import { generateTtsMp3 } from './services/elevenLabs';
 import { storeVoicemailMp3, getVoicemailMp3 } from './services/mediaStore';
 import dotenv from 'dotenv';
+import fs from 'fs';
+import path from 'path';
+import Papa from 'papaparse';
 dotenv.config();
 
 const app = express();
@@ -118,6 +121,66 @@ app.put('/api/templates/:id/graph', async (req, res) => {
   ]);
   const tpl = await prisma.template.findUnique({ where: { id: req.params.id }, include: { nodes: true, edges: true } });
   res.json(tpl);
+});
+
+// Content Templates (from CSV in repo root)
+app.get('/api/content-templates', async (_req, res) => {
+  try {
+    const slugify = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+    const parseEmail = (raw: string): { subject?: string; body: string } => {
+      if (!raw) return { body: '' };
+      const match = raw.match(/^\s*Subject\s*:\s*(.*)$/mi);
+      if (match) {
+        const subject = (match[1] || '').trim();
+        const body = raw.replace(match[0], '').trim();
+        return { subject, body };
+      }
+      return { body: raw.trim() };
+    };
+
+    const csvPath = path.resolve(__dirname, '../../../templates.csv');
+    if (!fs.existsSync(csvPath)) {
+      return res.status(404).json({ error: 'templates.csv not found' });
+    }
+    const csv = fs.readFileSync(csvPath, 'utf8');
+    const parsed = Papa.parse(csv, { header: true, skipEmptyLines: true });
+    if (parsed.errors && parsed.errors.length) {
+      // Return first error context for debugging
+      return res.status(400).json({ error: 'CSV parse error', details: parsed.errors[0] });
+    }
+    const rows: any[] = Array.isArray(parsed.data) ? (parsed.data as any[]) : [];
+    const items = rows
+      .map((row) => {
+        const name = String(row.Name || row.name || '').trim();
+        const content = String(row.Content || row.content || '').trim();
+        const typeRaw = String(row.Type || row.type || '').trim().toLowerCase();
+        if (!name || !content || !typeRaw) return null;
+        let type: 'email'|'sms'|'voicemail' | null = null;
+        if (typeRaw.startsWith('email')) type = 'email';
+        else if (typeRaw.startsWith('sms')) type = 'sms';
+        else if (typeRaw.startsWith('voice')) type = 'voicemail';
+        if (!type) return null;
+        const id = `ct_${slugify(name)}_${type}`;
+        if (type === 'email') {
+          const { subject, body } = parseEmail(content);
+          return { id, type, name, subject, body };
+        }
+        if (type === 'sms') {
+          return { id, type, name, text: content };
+        }
+        return { id, type, name, tts_script: content };
+      })
+      .filter(Boolean);
+
+    // De-duplicate by id, keep first occurrence
+    const byId: Record<string, any> = {};
+    for (const it of items as any[]) {
+      if (!byId[it.id]) byId[it.id] = it;
+    }
+    res.json(Object.values(byId));
+  } catch (e: any) {
+    res.status(500).json({ error: e?.message || 'import error' });
+  }
 });
 
 // Campaigns

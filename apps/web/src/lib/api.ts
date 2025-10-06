@@ -24,6 +24,10 @@ export const apiTemplates = {
   saveGraph: (id: string, graph: { nodes: any[]; edges: any[] }) => sendJson('PUT', `/api/templates/${id}/graph`, graph),
 };
 
+export const apiContentTemplates = {
+  list: () => getJson('/api/content-templates') as Promise<Array<{ id: string; type: 'email'|'sms'|'voicemail'; name: string; subject?: string; body?: string; text?: string; tts_script?: string }>>,
+};
+
 // Campaigns
 export const apiCampaigns = {
   list: () => getJson('/api/campaigns'),

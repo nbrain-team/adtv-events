@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useStore } from '@store/useStore';
 import { CreateFunnelTemplateModal } from '@components/CreateFunnelTemplateModal';
-import { apiTemplates } from '@lib/api';
+import { apiTemplates, apiContentTemplates } from '@lib/api';
 
 export function TemplatesFunnel() {
   const { campaigns, contentTemplates, upsertContentTemplate, addToast } = useStore();
@@ -66,6 +66,18 @@ export function TemplatesFunnel() {
   useEffect(() => {
     // Optionally fetch templates from backend to sync (non-blocking for static prototype)
     apiTemplates.list().then(() => {}).catch(()=>{});
+    // Load content templates from server CSV and merge into store
+    apiContentTemplates.list()
+      .then((list) => {
+        if (!Array.isArray(list) || list.length === 0) return;
+        const seen = new Set(contentTemplates.map((t) => t.id));
+        for (const t of list) {
+          if (seen.has(t.id)) continue;
+          upsertContentTemplate(t as any);
+          seen.add(t.id);
+        }
+      })
+      .catch(()=>{});
   }, []);
 
   return (
