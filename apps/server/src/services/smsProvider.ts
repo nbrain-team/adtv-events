@@ -43,25 +43,30 @@ export async function sendSms(input: SendSmsInput): Promise<SendSmsResult> {
     const sendPath = process.env.BONZO_SEND_PATH || '/messages/send';
     const authHeader = process.env.BONZO_AUTH_HEADER || 'Authorization';
     const authScheme = (process.env.BONZO_AUTH_SCHEME ?? 'Bearer');
+    const onBehalfOf = process.env.BONZO_ON_BEHALF_OF || '';
 
     if (!baseUrl || !apiKey) {
       // fall through to mock if missing config
     } else {
-      const url = `${baseUrl.replace(/\/$/, '')}${sendPath}`;
+      const baseTrimmed = baseUrl.replace(/\/$/, '');
       const isV3 = /\/v3(\/|$)/.test(sendPath);
+      const needsApiPath = isV3 && /https?:\/\/app\.getbonzo\.com(\/|$)/i.test(baseTrimmed) && !/\/api(\/|$)/i.test(baseTrimmed);
+      const effectiveBase = needsApiPath ? `${baseTrimmed}/api` : baseTrimmed;
+      const url = `${effectiveBase}${sendPath}`;
       // Use Bonzo v3 payload when targeting their v3 API; otherwise legacy payload
       const body = (isV3
         ? {
             first_name: 'Contact',
             phone: to,
             message: input.text,
-            send_as: 'owner',
+            send_as: (process.env.BONZO_SEND_AS || 'owner'),
           }
         : {
             to,
             from: fromNumber || undefined,
             message: input.text,
             text: input.text,
+            send_as: process.env.BONZO_SEND_AS || undefined,
           }) as any;
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
@@ -69,6 +74,9 @@ export async function sendSms(input: SendSmsInput): Promise<SendSmsResult> {
       };
       if (authHeader) {
         headers[authHeader] = authScheme ? `${authScheme} ${apiKey}` : apiKey;
+      }
+      if (onBehalfOf) {
+        headers['On-Behalf-Of'] = onBehalfOf;
       }
       const res = await doFetch(url, {
         method: 'POST',
