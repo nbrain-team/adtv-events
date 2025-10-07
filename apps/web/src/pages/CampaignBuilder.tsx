@@ -139,7 +139,13 @@ export function CampaignBuilder() {
               </div>
               <div className="grid grid-cols-1 gap-2">
                 {campaign.status !== 'active' && (
-                  <button className="btn-primary btn-md" onClick={()=> setStatus('active')}>{campaign.status==='paused' ? 'Resume Campaign' : 'Send / Activate Campaign'}</button>
+                  <button className="btn-primary btn-md" onClick={async ()=> {
+                    await setStatus('active');
+                    try {
+                      await fetch(`${(import.meta as any).env?.VITE_API_URL || ''}/api/campaigns/${campaign.id}/execute-sms`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) });
+                      addToast({ title: 'Campaign activated', description: 'Initial SMS run queued', variant: 'success' });
+                    } catch {}
+                  }}>{campaign.status==='paused' ? 'Resume Campaign' : 'Send / Activate Campaign'}</button>
                 )}
                 {campaign.status === 'active' && (
                   <button className="btn-outline btn-md" onClick={()=> setStatus('paused')}>Pause Campaign</button>

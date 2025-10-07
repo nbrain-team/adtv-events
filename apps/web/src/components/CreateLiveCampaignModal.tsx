@@ -74,6 +74,22 @@ export function CreateLiveCampaignModal({ open, onClose }: Props) {
   const submit = async () => {
     const id = `live_${Math.random().toString(36).slice(2)}`;
     const prod = PRODUCERS.find((p) => p.name === producer);
+    // Ensure selected template exists on server; if a local-only template was chosen, create it on server now
+    let effectiveTemplateId = templateId || '';
+    try {
+      if (effectiveTemplateId) {
+        const existsOnServer = Array.isArray(templates) && templates.some((t: any) => t && t.id === effectiveTemplateId);
+        if (!existsOnServer) {
+          const localTpl = (Array.isArray(campaigns) ? campaigns : []).find((t: any) => t.id === effectiveTemplateId);
+          if (localTpl && localTpl.graph && Array.isArray(localTpl.graph.nodes) && Array.isArray(localTpl.graph.edges)) {
+            const created = await apiTemplates.create(localTpl.name || 'Template', { nodes: localTpl.graph.nodes, edges: localTpl.graph.edges });
+            if (created && created.id) {
+              effectiveTemplateId = created.id;
+            }
+          }
+        }
+      }
+    } catch {}
     const payload: Campaign = {
       id,
       name,
@@ -116,7 +132,7 @@ export function CreateLiveCampaignModal({ open, onClose }: Props) {
         hotelName: eventType==='in_person'?hotelName: undefined,
         hotelAddress: eventType==='in_person'?hotelAddress: undefined,
         calendlyLink: eventType==='in_person'?inPersonCalendly: undefined,
-        templateId: templateId || undefined,
+        templateId: effectiveTemplateId || undefined,
         // optional: server could look up userId by email; for now, pass nothing and use default profile
         status: 'draft',
       });
