@@ -174,6 +174,15 @@ export function TemplatesFunnel() {
               </div>
             </div>
 
+            <div className="text-xs text-gray-600 bg-gray-50 border rounded p-2">
+              <div className="font-semibold mb-1">Available merge tags</div>
+              <div className="flex items-center gap-2 flex-wrap">
+                {mergeTags.map((t)=> (
+                  <span key={t} className="subtab">{t}</span>
+                ))}
+              </div>
+            </div>
+
             {tplType==='email' && (
               <div className="space-y-2">
                 <div>
