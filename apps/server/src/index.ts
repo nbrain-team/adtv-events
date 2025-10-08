@@ -291,13 +291,35 @@ app.patch('/api/campaigns/:id', async (req, res) => {
       importGraph: z.boolean().optional(),
     }).partial().parse(req.body);
 
+    // Normalize empty strings to null/undefined where appropriate
+    const updateData: any = {
+      name: body.name,
+      ownerName: body.ownerName,
+      ownerEmail: body.ownerEmail,
+      ownerPhone: body.ownerPhone,
+      city: body.city,
+      state: body.state,
+      videoLink: body.videoLink,
+      eventLink: body.eventLink,
+      eventType: body.eventType,
+      status: body.status,
+      hotelName: body.hotelName,
+      hotelAddress: body.hotelAddress,
+      calendlyLink: body.calendlyLink,
+    };
+    if (typeof body.templateId !== 'undefined') {
+      updateData.templateId = body.templateId === '' ? null : body.templateId;
+    }
+    if (body.eventDate) {
+      updateData.eventDate = new Date(body.eventDate);
+    }
+    if (body.launchDate) {
+      updateData.launchDate = new Date(body.launchDate);
+    }
+
     const updated = await prisma.campaign.update({
       where: { id: req.params.id },
-      data: {
-        ...body,
-        eventDate: body.eventDate ? new Date(body.eventDate) : undefined,
-        launchDate: body.launchDate ? new Date(body.launchDate) : undefined,
-      },
+      data: updateData,
     });
 
     // If requested, replace campaign graph with the template's nodes/edges
