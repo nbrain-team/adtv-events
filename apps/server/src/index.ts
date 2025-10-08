@@ -20,6 +20,101 @@ app.use(cors());
 app.use(express.json({ limit: '2mb' }));
 app.use(express.urlencoded({ extended: true }));
 const prisma = new PrismaClient();
+
+// Content templates loader (CSV from repo root), with simple cache
+type ContentTemplate = { id: string; type: 'email'|'sms'|'voicemail'; name: string; subject?: string; body?: string; text?: string; tts_script?: string };
+let contentTemplatesCache: { at: number; items: ContentTemplate[] } | null = null;
+async function loadContentTemplates(): Promise<ContentTemplate[]> {
+  try {
+    const now = Date.now();
+    if (contentTemplatesCache && now - contentTemplatesCache.at < 60_000) return contentTemplatesCache.items;
+    const csvPath = path.resolve(__dirname, '../../../templates.csv');
+    if (!fs.existsSync(csvPath)) {
+      contentTemplatesCache = { at: now, items: [] };
+      return [];
+    }
+    const csv = fs.readFileSync(csvPath, 'utf8');
+    const parsed = Papa.parse(csv, { header: true, skipEmptyLines: true } as any);
+    if ((parsed as any).errors && (parsed as any).errors.length) {
+      contentTemplatesCache = { at: now, items: [] };
+      return [];
+    }
+    const rows: any[] = Array.isArray((parsed as any).data) ? ((parsed as any).data as any[]) : [];
+    const items = rows
+      .map((row) => {
+        const name = String(row.Name || row.name || '').trim();
+        const content = String(row.Content || row.content || '').trim();
+        const typeRaw = String(row.Type || row.type || '').trim().toLowerCase();
+        if (!name || !content || !typeRaw) return null;
+        let type: 'email'|'sms'|'voicemail' | null = null;
+        if (typeRaw.startsWith('email')) type = 'email';
+        else if (typeRaw.startsWith('sms')) type = 'sms';
+        else if (typeRaw.startsWith('voice')) type = 'voicemail';
+        if (!type) return null;
+        const slugify = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+        const id = `ct_${slugify(name)}_${type}`;
+        if (type === 'email') {
+          const match = content.match(/^\s*Subject\s*:\s*(.*)$/mi);
+          if (match) {
+            const subject = (match[1] || '').trim();
+            const body = content.replace(match[0], '').trim();
+            return { id, type, name, subject, body } as ContentTemplate;
+          }
+          return { id, type, name, body: content } as ContentTemplate;
+        }
+        if (type === 'sms') return { id, type, name, text: content } as ContentTemplate;
+        return { id, type, name, tts_script: content } as ContentTemplate;
+      })
+      .filter(Boolean) as ContentTemplate[];
+    // De-duplicate by id
+    const byId: Record<string, ContentTemplate> = {};
+    for (const it of items) if (!byId[it.id]) byId[it.id] = it;
+    const out = Object.values(byId);
+    contentTemplatesCache = { at: now, items: out };
+    return out;
+  } catch {
+    return [];
+  }
+}
+
+function renderMergeTags(input: string, ctx: Record<string, any>): string {
+  if (!input) return '';
+  return input.replace(/\{\{\s*([^}]+)\s*\}\}/g, (_m, key) => {
+    const path = String(key || '').trim().split('.');
+    let cur: any = ctx;
+    for (const p of path) {
+      if (cur && typeof cur === 'object' && p in cur) cur = cur[p]; else return '';
+    }
+    return String(cur ?? '');
+  });
+}
+
+async function resolveSmsTextFromConfig(config: any): Promise<string> {
+  try {
+    if (config?.text) return String(config.text);
+    if (config?.message) return String(config.message);
+    if (config?.template_id) {
+      const templates = await loadContentTemplates();
+      const t = templates.find((x) => x.id === config.template_id && x.type === 'sms');
+      if (t?.text) return String(t.text);
+    }
+  } catch {}
+  return '';
+}
+
+async function resolveEmailFromConfig(config: any): Promise<{ subject: string; body: string }> {
+  try {
+    if (config?.content && (config.content.subject || config.content.body)) {
+      return { subject: String(config.content.subject || ''), body: String(config.content.body || '') };
+    }
+    if (config?.template_id) {
+      const templates = await loadContentTemplates();
+      const t = templates.find((x) => x.id === config.template_id && x.type === 'email');
+      if (t) return { subject: String(t.subject || ''), body: String(t.body || '') };
+    }
+  } catch {}
+  return { subject: '', body: '' };
+}
 // Outbound SMS via provider adapter (Bonzo/Twilio)
 app.post('/api/sms/send', async (req, res) => {
   try {
@@ -266,13 +361,15 @@ app.post('/api/campaigns/:id/execute-sms', async (req, res) => {
     for (const contact of contacts) {
       const toNumber = (contact.phone || '').trim();
       if (!toNumber) continue;
-      const msgText = body.text || (() => {
-        // try to derive text from first sms node config
-        try {
-          const cfg = smsNodes[0].configJson ? JSON.parse(smsNodes[0].configJson) : {};
-          return (cfg.text || cfg.message || '').toString();
-        } catch { return ''; }
-      })() || `Hi ${contact.name || ''}`.trim();
+      const msgTextRaw = body.text || (() => {
+        try { const cfg = smsNodes[0].configJson ? JSON.parse(smsNodes[0].configJson) : {}; return cfg; } catch { return {}; }
+      })();
+      const cfgFirst = typeof msgTextRaw === 'string' ? { text: msgTextRaw } : (msgTextRaw || {});
+      const resolvedText = await resolveSmsTextFromConfig(cfgFirst);
+      const msgText = renderMergeTags(resolvedText || `Hi {{contact.name}}`, {
+        contact: { name: contact.name, email: contact.email, phone: contact.phone },
+        campaign: {},
+      }).trim();
 
       const result = await sendSms({ to: toNumber, text: msgText });
       // Ensure conversation and log message
@@ -282,6 +379,84 @@ app.post('/api/campaigns/:id/execute-sms', async (req, res) => {
       if (result.sent) total++;
     }
     res.json({ ok: true, sent: total });
+  } catch (e: any) {
+    res.status(400).json({ error: e?.message || 'execute error' });
+  }
+});
+
+// Combined executor: send emails and SMS for first matching nodes
+app.post('/api/campaigns/:id/execute', async (req, res) => {
+  try {
+    const body = z.object({ nodeKey: z.string().optional() }).parse(req.body || {});
+    const campaignId = req.params.id;
+    const [nodes, contacts, campaign] = await Promise.all([
+      prisma.campaignNode.findMany({ where: { campaignId } }),
+      prisma.contact.findMany({ where: { campaignId } }),
+      prisma.campaign.findUnique({ where: { id: campaignId } }),
+    ]);
+    const firstSms = nodes.find((n) => n.type === 'sms_send' && (!body.nodeKey || n.key === body.nodeKey));
+    const firstEmail = nodes.find((n) => n.type === 'email_send' && (!body.nodeKey || n.key === body.nodeKey));
+
+    let smsSent = 0;
+    let emailSent = 0;
+    const campaignCtx = {
+      name: campaign?.name,
+      owner_name: campaign?.ownerName,
+      owner_email: campaign?.ownerEmail,
+      owner_phone: campaign?.ownerPhone,
+      event_type: campaign?.eventType,
+      city: campaign?.city,
+      state: campaign?.state,
+      launch_date: campaign?.launchDate ? campaign.launchDate.toISOString().slice(0,10) : '',
+      event_date: campaign?.eventDate ? campaign.eventDate.toISOString().slice(0,10) : '',
+      video_link: campaign?.videoLink,
+      event_link: campaign?.eventLink,
+      hotel_name: campaign?.hotelName,
+      hotel_address: campaign?.hotelAddress,
+      calendly_link: campaign?.calendlyLink,
+      sender_email: undefined,
+    } as any;
+
+    if (firstSms) {
+      let cfg: any = {};
+      try { cfg = firstSms.configJson ? JSON.parse(firstSms.configJson) : {}; } catch {}
+      const baseText = await resolveSmsTextFromConfig(cfg);
+      for (const ct of contacts) {
+        if (!ct.phone) continue;
+        const text = renderMergeTags(baseText, { contact: { name: ct.name, email: ct.email, phone: ct.phone }, campaign: campaignCtx }).trim();
+        const resSms = await sendSms({ to: ct.phone, text });
+        let convo = await prisma.conversation.findFirst({ where: { contactId: ct.id, channel: 'sms' } });
+        if (!convo) convo = await prisma.conversation.create({ data: { contactId: ct.id, channel: 'sms' } });
+        await prisma.message.create({ data: { conversationId: convo.id, direction: 'out', text } });
+        if (resSms.sent) smsSent++;
+      }
+    }
+
+    if (firstEmail) {
+      let cfg: any = {};
+      try { cfg = firstEmail.configJson ? JSON.parse(firstEmail.configJson) : {}; } catch {}
+      const { subject, body: emailBody } = await resolveEmailFromConfig(cfg);
+      for (const ct of contacts) {
+        if (!ct.email) continue;
+        const sub = renderMergeTags(subject || '', { contact: { name: ct.name, email: ct.email, phone: ct.phone }, campaign: campaignCtx }).trim();
+        const bod = renderMergeTags(emailBody || '', { contact: { name: ct.name, email: ct.email, phone: ct.phone }, campaign: campaignCtx }).trim();
+        try {
+          await (async () => {
+            const payload = { to: ct.email!, subject: sub, body: bod } as any;
+            const r = await fetch((process.env.PUBLIC_BASE_URL || '') + '/api/email/send', {
+              method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
+            } as any);
+            if (!r.ok) throw new Error('email send failed');
+          })();
+          let convo = await prisma.conversation.findFirst({ where: { contactId: ct.id, channel: 'email' } });
+          if (!convo) convo = await prisma.conversation.create({ data: { contactId: ct.id, channel: 'email' } });
+          await prisma.message.create({ data: { conversationId: convo.id, direction: 'out', text: (sub ? `[${sub}]\n\n` : '') + bod } });
+          emailSent++;
+        } catch {}
+      }
+    }
+
+    res.json({ ok: true, smsSent, emailSent });
   } catch (e: any) {
     res.status(400).json({ error: e?.message || 'execute error' });
   }
