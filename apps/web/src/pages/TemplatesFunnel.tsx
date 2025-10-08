@@ -7,6 +7,10 @@ import { apiTemplates, apiContentTemplates } from '@lib/api';
 export function TemplatesFunnel() {
   const { campaigns, contentTemplates, upsertContentTemplate, addToast, setCampaigns } = useStore() as any;
   const [open, setOpen] = useState(false);
+  const [serverTemplates, setServerTemplates] = useState<any[]>([]);
+  const loadServerTemplates = async () => {
+    try { const list = await apiTemplates.list(); setServerTemplates(Array.isArray(list)?list:[]); } catch { setServerTemplates([]); }
+  };
   // Removed search and status filters per request
   const [openTpl, setOpenTpl] = useState(false);
   const [editingTplId, setEditingTplId] = useState<string | null>(null);
@@ -65,7 +69,7 @@ export function TemplatesFunnel() {
 
   useEffect(() => {
     // Optionally fetch templates from backend to sync (non-blocking for static prototype)
-    apiTemplates.list().then(() => {}).catch(()=>{});
+    loadServerTemplates().catch(()=>{});
     // Load content templates from server CSV and merge into store
     apiContentTemplates.list()
       .then((list) => {
@@ -79,6 +83,10 @@ export function TemplatesFunnel() {
       })
       .catch(()=>{});
   }, []);
+
+  useEffect(() => {
+    if (!open) loadServerTemplates().catch(()=>{});
+  }, [open]);
 
   return (
     <div className="space-y-6">
@@ -96,15 +104,15 @@ export function TemplatesFunnel() {
       {/* Filters removed */}
 
       <div className="grid md:grid-cols-2 gap-4 mt-2">
-        {filtered.map((c: any) => (
+        {serverTemplates.map((c: any) => (
           <Link key={c.id} to={`/templates/${c.id}`} className="card block hover:shadow-soft-xl transition border border-gray-200">
             <div className="flex items-center justify-between">
               <div>
                 <p className="font-semibold">{c.name}</p>
-                <p className="text-xs text-gray-500">v{c.version} · {c.status}</p>
+                <p className="text-xs text-gray-500">v{c.version||1} · {c.status||'draft'}</p>
               </div>
               <div className="flex items-center gap-2">
-                <span className="badge-primary">{c.graph.nodes.length} nodes</span>
+                <span className="badge-primary">{Array.isArray(c.nodes)?c.nodes.length:0} nodes</span>
                 <button
                   className="btn-outline btn-xs"
                   onClick={(e)=> { e.preventDefault(); e.stopPropagation(); (async ()=> {
@@ -113,7 +121,7 @@ export function TemplatesFunnel() {
                     try {
                       const resp = await fetch(`${(import.meta as any).env?.VITE_API_URL || ''}/api/templates/${c.id}`, { method: 'DELETE' });
                       if (!resp.ok) throw new Error('Delete failed');
-                      setCampaigns((prev: any[]) => (Array.isArray(prev) ? prev.filter((x: any) => x.id !== c.id) : []));
+                      await loadServerTemplates();
                       addToast({ title: 'Template deleted', description: c.name, variant: 'success' });
                     } catch (err: any) {
                       addToast({ title: 'Delete failed', description: String(err?.message||'error'), variant: 'error' });
