@@ -512,7 +512,7 @@ app.post('/api/campaigns/:id/execute', async (req, res) => {
               const b64 = tts.audioUrl.replace('data:audio/mpeg;base64,', '');
               const buf = Buffer.from(b64, 'base64');
               const id = storeVoicemailMp3(buf);
-              const base = (process.env.PUBLIC_BASE_URL || '');
+              const base = (process.env.PUBLIC_BASE_URL || (((req.headers['x-forwarded-proto'] || req.protocol) + '://' + req.get('host'))));
               audioUrl = `${String(base).replace(/\/$/, '')}/media/vm/${id}.mp3`;
             } else {
               audioUrl = tts.audioUrl;
@@ -521,6 +521,10 @@ app.post('/api/campaigns/:id/execute', async (req, res) => {
         } catch {}
         const r = await sendVoicemailDrop({ to: ct.phone, audioUrl: audioUrl || undefined, callerId: process.env.SLYBROADCAST_CALLER_ID || undefined, campaignId: campaign?.id });
         if (r.queued) vmQueued++;
+        else {
+          // eslint-disable-next-line no-console
+          console.warn('[execute] Voicemail drop failed', { to: ct.phone, audioUrl, raw: r.raw });
+        }
       }
     }
 

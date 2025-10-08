@@ -57,16 +57,19 @@ export async function sendVoicemailDrop(input: VoicemailDropInput): Promise<Voic
   let audio_url = (!isDataUrl && input.audioUrl) ? input.audioUrl : (process.env.SLYBROADCAST_DEFAULT_AUDIO_URL || '');
   const audio_ext = (audio_url || '').toLowerCase().endsWith('.m4a') ? 'm4a' : ((audio_url || '').toLowerCase().endsWith('.wav') ? 'wav' : 'mp3');
 
+  // v3 API accepts either legacy c_* fields or newer fields; use documented fields
   const payload: Record<string, string> = {
-    // Per docs: https://www.slybroadcast.com/documentation.php
+    'campaign_id': input.campaignId || '',
+    'caller_id': input.callerId || input.from || '',
+    'audio_url': audio_url,
+    'list': numbers,
+    's': '1',
+    'date': input.scheduleAt || 'now',
+    'msg': input.note || '',
+    'source': 'api',
+    'method': 'new',
     'c_uid': user,
     'c_password': password,
-    'c_url': audio_url,
-    'c_audio': audio_ext,
-    'c_phone': numbers,
-    'c_callerID': input.callerId || input.from || '',
-    'c_date': input.scheduleAt || 'now',
-    'c_title': input.campaignId || '',
   };
 
   const form = new URLSearchParams();
