@@ -6,7 +6,6 @@ import nodemailer from 'nodemailer';
 import twilio from 'twilio';
 import { sendSms } from './services/smsProvider';
 import { createProspect as bonzoCreateProspect, optInProspect as bonzoOptIn } from './services/bonzoApi';
-import { sendVoicemailDrop } from './services/voicemailProvider';
 import { generateTtsMp3 } from './services/elevenLabs';
 import { storeVoicemailMp3, getVoicemailMp3 } from './services/mediaStore';
 import { sendVoicemailDrop } from './services/voicemailProvider';
