@@ -123,6 +123,24 @@ app.put('/api/templates/:id/graph', async (req, res) => {
   res.json(tpl);
 });
 
+// Delete template
+app.delete('/api/templates/:id', async (req, res) => {
+  try {
+    const id = req.params.id;
+    // Prevent delete if any campaign references it
+    const inUse = await prisma.campaign.count({ where: { templateId: id } });
+    if (inUse > 0) return res.status(400).json({ error: 'Template is in use by one or more campaigns' });
+    await prisma.$transaction([
+      prisma.node.deleteMany({ where: { templateId: id } }),
+      prisma.edge.deleteMany({ where: { templateId: id } }),
+      prisma.template.delete({ where: { id } }),
+    ]);
+    res.json({ ok: true });
+  } catch (e: any) {
+    res.status(400).json({ error: e?.message || 'delete error' });
+  }
+});
+
 // Content Templates (from CSV in repo root)
 app.get('/api/content-templates', async (_req, res) => {
   try {
