@@ -6,7 +6,7 @@ import ReactFlow, { Background, Controls, MiniMap, Edge, Node, Connection, addEd
 import 'reactflow/dist/style.css';
 // @ts-ignore
 import dagre from 'dagre';
-import { apiTemplates } from '@lib/api';
+import { apiTemplates, apiContentTemplates } from '@lib/api';
 
 const stageByNode = (name: string) => {
   if (name.includes('Campaign 1')) return 'Campaign 1';
@@ -59,6 +59,21 @@ export function TemplateBuilder() {
     }
     return undefined;
   }, [campaigns, params.id, serverTemplate]);
+  // Ensure content templates are loaded from server so selector shows new ones
+  useEffect(() => {
+    (async () => {
+      try {
+        const list = await apiContentTemplates.list();
+        if (Array.isArray(list) && list.length) {
+          const seen = new Set((useStore.getState() as any).contentTemplates.map((t: any) => t.id));
+          for (const t of list) {
+            if (seen.has(t.id)) continue;
+            (useStore.getState() as any).upsertContentTemplate(t);
+          }
+        }
+      } catch {}
+    })();
+  }, []);
   const [nodes, setNodes] = useState<Node[]>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -397,7 +412,7 @@ function Inspector({ node, edgesOut, onChange, onChangeEdges, onDelete }: Inspec
 
   const typeMap: Record<string, 'email'|'sms'|'voicemail' | undefined> = { email_send: 'email', sms_send: 'sms', voicemail_drop: 'voicemail' };
   const availableTemplates = (typeMap[node.type]
-    ? contentTemplates.filter((t) => t.type === typeMap[node.type] && typeof t.id === 'string' && t.id.startsWith('ct_'))
+    ? contentTemplates.filter((t) => t.type === typeMap[node.type])
     : []);
 
   useEffect(() => { setEdgesDraft(edgesOut || []); }, [edgesOut]);
@@ -537,10 +552,6 @@ function Inspector({ node, edgesOut, onChange, onChangeEdges, onDelete }: Inspec
             const updated = { ...node, name } as any;
             if (node.type === 'email_send' || node.type === 'sms_send' || node.type==='voicemail_drop') {
               if (mode==='template') {
-                if (!templateId || !templateId.startsWith('ct_')) {
-                  (useStore.getState() as any).addToast({ title: 'Select a published content template', description: 'Choose a template from the server list (ct_*)', variant: 'error' });
-                  return;
-                }
                 updated.config = { ...(node.config||{}), template_id: templateId, content: undefined };
               } else {
                 if (node.type==='email_send') updated.config = { ...(node.config||{}), content: { subject: emailSubject, body: emailBody } };
