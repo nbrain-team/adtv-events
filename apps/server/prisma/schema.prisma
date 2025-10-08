@@ -7,6 +7,18 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+model ContentTemplate {
+  id         String   @id @default(cuid())
+  type       String   // 'email' | 'sms' | 'voicemail'
+  name       String
+  subject    String?
+  body       String?
+  text       String?
+  ttsScript  String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
 model Template {
   id        String   @id @default(cuid())
   name      String
