@@ -42,6 +42,11 @@ function resolveTemplatesCsvPath(): string | null {
 }
 async function loadContentTemplates(): Promise<ContentTemplate[]> {
   try {
+    // Prefer DB-backed content templates
+    const dbItems = await prisma.contentTemplate.findMany({ orderBy: { createdAt: 'desc' } }) as any[];
+    if (Array.isArray(dbItems) && dbItems.length) {
+      return dbItems.map((t) => ({ id: t.id, type: t.type, name: t.name, subject: t.subject || undefined, body: t.body || undefined, text: t.text || undefined, tts_script: t.ttsScript || undefined }));
+    }
     const now = Date.now();
     if (contentTemplatesCache && now - contentTemplatesCache.at < 60_000) return contentTemplatesCache.items;
     const csvPath = resolveTemplatesCsvPath();
@@ -86,6 +91,13 @@ async function loadContentTemplates(): Promise<ContentTemplate[]> {
     const byId: Record<string, ContentTemplate> = {};
     for (const it of items) if (!byId[it.id]) byId[it.id] = it;
     const out = Object.values(byId);
+    // Also seed DB once if empty
+    try {
+      const count = await prisma.contentTemplate.count();
+      if (count === 0 && out.length) {
+        await prisma.contentTemplate.createMany({ data: out.map((t) => ({ id: t.id, type: t.type, name: t.name, subject: t.subject || null, body: t.body || null, text: t.text || null, ttsScript: t.tts_script || null })) });
+      }
+    } catch {}
     contentTemplatesCache = { at: now, items: out };
     return out;
   } catch {
@@ -291,60 +303,31 @@ app.delete('/api/templates/:id', async (req, res) => {
 // Content Templates (from CSV in repo root)
 app.get('/api/content-templates', async (_req, res) => {
   try {
-    const slugify = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
-    const parseEmail = (raw: string): { subject?: string; body: string } => {
-      if (!raw) return { body: '' };
-      const match = raw.match(/^\s*Subject\s*:\s*(.*)$/mi);
-      if (match) {
-        const subject = (match[1] || '').trim();
-        const body = raw.replace(match[0], '').trim();
-        return { subject, body };
-      }
-      return { body: raw.trim() };
-    };
-
-    const csvPath = resolveTemplatesCsvPath();
-    if (!csvPath) {
-      return res.status(404).json({ error: 'templates.csv not found' });
-    }
-    const csv = fs.readFileSync(csvPath, 'utf8');
-    const parsed = Papa.parse(csv, { header: true, skipEmptyLines: true });
-    if (parsed.errors && parsed.errors.length) {
-      // Return first error context for debugging
-      return res.status(400).json({ error: 'CSV parse error', details: parsed.errors[0] });
-    }
-    const rows: any[] = Array.isArray(parsed.data) ? (parsed.data as any[]) : [];
-    const items = rows
-      .map((row) => {
-        const name = String(row.Name || row.name || '').trim();
-        const content = String(row.Content || row.content || '').trim();
-        const typeRaw = String(row.Type || row.type || '').trim().toLowerCase();
-        if (!name || !content || !typeRaw) return null;
-        let type: 'email'|'sms'|'voicemail' | null = null;
-        if (typeRaw.startsWith('email')) type = 'email';
-        else if (typeRaw.startsWith('sms')) type = 'sms';
-        else if (typeRaw.startsWith('voice')) type = 'voicemail';
-        if (!type) return null;
-        const id = `ct_${slugify(name)}_${type}`;
-        if (type === 'email') {
-          const { subject, body } = parseEmail(content);
-          return { id, type, name, subject, body };
-        }
-        if (type === 'sms') {
-          return { id, type, name, text: content };
-        }
-        return { id, type, name, tts_script: content };
-      })
-      .filter(Boolean);
-
-    // De-duplicate by id, keep first occurrence
-    const byId: Record<string, any> = {};
-    for (const it of items as any[]) {
-      if (!byId[it.id]) byId[it.id] = it;
-    }
-    res.json(Object.values(byId));
+    const list = await prisma.contentTemplate.findMany({ orderBy: { createdAt: 'desc' } });
+    res.json(list.map((t) => ({ id: t.id, type: t.type, name: t.name, subject: t.subject || undefined, body: t.body || undefined, text: t.text || undefined, tts_script: t.ttsScript || undefined })));
   } catch (e: any) {
     res.status(500).json({ error: e?.message || 'import error' });
+  }
+});
+
+// Create content template
+app.post('/api/content-templates', async (req, res) => {
+  try {
+    const body = z.object({ type: z.enum(['email','sms','voicemail']), name: z.string(), subject: z.string().optional(), body: z.string().optional(), text: z.string().optional(), tts_script: z.string().optional() }).parse(req.body);
+    const created = await prisma.contentTemplate.create({ data: { type: body.type, name: body.name, subject: body.subject || null, body: body.body || null, text: body.text || null, ttsScript: body.tts_script || null } });
+    res.json({ id: created.id, type: created.type, name: created.name, subject: created.subject || undefined, body: created.body || undefined, text: created.text || undefined, tts_script: created.ttsScript || undefined });
+  } catch (e: any) {
+    res.status(400).json({ error: e?.message || 'create error' });
+  }
+});
+
+// Delete content template
+app.delete('/api/content-templates/:id', async (req, res) => {
+  try {
+    await prisma.contentTemplate.delete({ where: { id: req.params.id } });
+    res.json({ ok: true });
+  } catch (e: any) {
+    res.status(400).json({ error: e?.message || 'delete error' });
   }
 });
 
