@@ -5,7 +5,7 @@ import { CreateFunnelTemplateModal } from '@components/CreateFunnelTemplateModal
 import { apiTemplates, apiContentTemplates } from '@lib/api';
 
 export function TemplatesFunnel() {
-  const { campaigns, contentTemplates, upsertContentTemplate, addToast } = useStore();
+  const { campaigns, contentTemplates, upsertContentTemplate, addToast, setCampaigns } = useStore() as any;
   const [open, setOpen] = useState(false);
   // Removed search and status filters per request
   const [openTpl, setOpenTpl] = useState(false);
@@ -51,7 +51,7 @@ export function TemplatesFunnel() {
   };
 
   const openEditTpl = (id: string) => {
-    const t = contentTemplates.find((x) => x.id === id);
+    const t = contentTemplates.find((x: any) => x.id === id);
     if (!t) return;
     setEditingTplId(t.id);
     setTplType(t.type);
@@ -70,7 +70,7 @@ export function TemplatesFunnel() {
     apiContentTemplates.list()
       .then((list) => {
         if (!Array.isArray(list) || list.length === 0) return;
-        const seen = new Set(contentTemplates.map((t) => t.id));
+        const seen = new Set(contentTemplates.map((t: any) => t.id));
         for (const t of list) {
           if (seen.has(t.id)) continue;
           upsertContentTemplate(t as any);
@@ -96,14 +96,30 @@ export function TemplatesFunnel() {
       {/* Filters removed */}
 
       <div className="grid md:grid-cols-2 gap-4 mt-2">
-        {filtered.map((c) => (
+        {filtered.map((c: any) => (
           <Link key={c.id} to={`/templates/${c.id}`} className="card block hover:shadow-soft-xl transition border border-gray-200">
             <div className="flex items-center justify-between">
               <div>
                 <p className="font-semibold">{c.name}</p>
                 <p className="text-xs text-gray-500">v{c.version} · {c.status}</p>
               </div>
-              <span className="badge-primary">{c.graph.nodes.length} nodes</span>
+              <div className="flex items-center gap-2">
+                <span className="badge-primary">{c.graph.nodes.length} nodes</span>
+                <button
+                  className="btn-outline btn-xs"
+                  onClick={(e)=> { e.preventDefault(); e.stopPropagation(); (async ()=> {
+                    const confirmDel = window.confirm('Delete this funnel template?');
+                    if (!confirmDel) return;
+                    try {
+                      await apiTemplates.delete(c.id);
+                      setCampaigns((prev: any[]) => prev.filter((x) => x.id !== c.id));
+                      addToast({ title: 'Template deleted', description: c.name, variant: 'success' });
+                    } catch (err: any) {
+                      addToast({ title: 'Delete failed', description: String(err?.message||'error'), variant: 'error' });
+                    }
+                  })(); }}
+                >Delete</button>
+              </div>
             </div>
           </Link>
         ))}
@@ -116,7 +132,7 @@ export function TemplatesFunnel() {
             <p className="text-sm text-gray-600">Click a template to view and update</p>
           </div>
           <div className="grid md:grid-cols-2 gap-4 mt-2">
-            {contentTemplates.map((t) => (
+            {contentTemplates.map((t: any) => (
               <button
                 key={t.id}
                 className="card text-left hover:shadow-soft-xl transition border border-gray-200"
@@ -127,7 +143,17 @@ export function TemplatesFunnel() {
                     <p className="font-semibold">{t.name}</p>
                     <p className="text-xs text-gray-500">{t.type.toUpperCase()}</p>
                   </div>
-                  <span className="badge-secondary">Edit</span>
+                  <div className="flex items-center gap-2">
+                    <span className="badge-secondary">Edit</span>
+                    <button className="btn-outline btn-xs" onClick={(e)=> { e.preventDefault(); e.stopPropagation();
+                      const ok = window.confirm('Delete this content template?');
+                      if (!ok) return;
+                      // Remove from local store only; content templates come from CSV on server
+                      const next = contentTemplates.filter((x: any) => x.id !== t.id);
+                      (useStore.getState() as any).contentTemplates = next; // mutate store state for simplicity
+                      addToast({ title: 'Content template deleted', description: t.name, variant: 'success' });
+                    }}>Delete</button>
+                  </div>
                 </div>
                 <div className="mt-2 text-sm text-gray-700 line-clamp-2">
                   {t.type === 'email' && (t.subject || t.body) && (
@@ -249,7 +275,7 @@ export function TemplatesFunnel() {
               <div className="mt-2">
                 <h4 className="font-semibold">Existing Content Templates</h4>
                 <ul className="list-disc pl-5 text-sm">
-                  {contentTemplates.map((t)=> (
+                  {contentTemplates.map((t: any)=> (
                     <li key={t.id}>
                       <button className="link" onClick={()=> openEditTpl(t.id)}>{t.type.toUpperCase()} · {t.name}</button>
                     </li>
