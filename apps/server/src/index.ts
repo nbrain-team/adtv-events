@@ -243,9 +243,8 @@ app.put('/api/templates/:id/graph', async (req, res) => {
 app.delete('/api/templates/:id', async (req, res) => {
   try {
     const id = req.params.id;
-    // Prevent delete if any campaign references it
-    const inUse = await prisma.campaign.count({ where: { templateId: id } });
-    if (inUse > 0) return res.status(400).json({ error: 'Template is in use by one or more campaigns' });
+    // Detach campaigns that reference this template (keep their cloned campaign graph intact)
+    await prisma.campaign.updateMany({ where: { templateId: id }, data: { templateId: null } });
     await prisma.$transaction([
       prisma.node.deleteMany({ where: { templateId: id } }),
       prisma.edge.deleteMany({ where: { templateId: id } }),
