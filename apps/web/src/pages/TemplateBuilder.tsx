@@ -1,5 +1,6 @@
 import { useMemo, useState, useEffect, useCallback, useRef } from 'react';
 import { useParams } from 'react-router-dom';
+// apiTemplates already imported above
 import { useStore } from '@store/useStore';
 import ReactFlow, { Background, Controls, MiniMap, Edge, Node, Connection, addEdge, applyEdgeChanges, applyNodeChanges, Handle, Position } from 'reactflow';
 import 'reactflow/dist/style.css';
@@ -37,7 +38,27 @@ g.setDefaultEdgeLabel(() => ({}));
 export function TemplateBuilder() {
   const params = useParams();
   const { campaigns, upsertCampaign, addToast } = useStore();
-  const template = useMemo(() => campaigns.find((c) => c.id === params.id), [campaigns, params.id]);
+  const [serverTemplate, setServerTemplate] = useState<any | null>(null);
+  useEffect(() => {
+    (async () => {
+      try {
+        if (!params.id) return;
+        const t = await apiTemplates.get(params.id);
+        if (t && t.id) setServerTemplate(t);
+      } catch { setServerTemplate(null); }
+    })();
+  }, [params.id]);
+  const template = useMemo(() => {
+    const local = campaigns.find((c) => c.id === params.id);
+    if (local) return local;
+    if (serverTemplate) {
+      // map server template to local shape
+      const nodes = Array.isArray(serverTemplate.nodes) ? serverTemplate.nodes.map((n: any) => ({ id: n.key, type: n.type, name: n.name, pos: (n.posX!=null && n.posY!=null)?{ x: n.posX, y: n.posY }: undefined })) : [];
+      const edges = Array.isArray(serverTemplate.edges) ? serverTemplate.edges.map((e: any) => ({ from: e.fromKey, to: e.toKey, condition: e.conditionJson?JSON.parse(e.conditionJson):undefined })) : [];
+      return { id: serverTemplate.id, name: serverTemplate.name, status: serverTemplate.status||'draft', version: serverTemplate.version||1, graph: { schema_version: 1, nodes, edges, start_rules: {} } } as any;
+    }
+    return undefined;
+  }, [campaigns, params.id, serverTemplate]);
   const [nodes, setNodes] = useState<Node[]>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -45,7 +66,7 @@ export function TemplateBuilder() {
   const humanize = (t: string) => t.replace(/_/g, ' ').replace(/\b\w/g, (m) => m.toUpperCase());
   const [newNodeName, setNewNodeName] = useState<string>(humanize('email_send'));
   const inspectorRef = useRef<HTMLDivElement | null>(null);
-  const selected = useMemo(() => template?.graph.nodes.find((n) => n.id === selectedId), [template, selectedId]);
+  const selected = useMemo(() => template?.graph.nodes.find((n: any) => n.id === selectedId), [template, selectedId]);
   const outgoing = useMemo(() => (template?.graph.edges || []).filter((e: any) => e.from === selectedId), [template, selectedId]);
 
   const relayout = (tpl: typeof template) => {
@@ -143,7 +164,7 @@ export function TemplateBuilder() {
         ...template,
         graph: {
           ...template.graph,
-          edges: template.graph.edges.filter((_, idx) => !removedIds.includes(`e${idx}`)),
+          edges: template.graph.edges.filter((_: any, idx: number) => !removedIds.includes(`e${idx}`)),
         },
       } as any;
       setTimeout(() => { upsertCampaign(newTpl); addToast({ title: 'Edge removed', variant: 'info' }); }, 0);
@@ -187,7 +208,7 @@ export function TemplateBuilder() {
   if (!template) return <div className="text-gray-500">Template not found.</div>;
 
   // Stage swimlane headers (simple, above canvas)
-  const lanes = Array.from(new Set(template.graph.nodes.map((n) => stageByNode(n.name))));
+  const lanes = Array.from(new Set((template.graph.nodes as any[]).map((n: any) => stageByNode(n.name)))) as string[];
 
   return (
     <div className="space-y-6">
@@ -300,7 +321,7 @@ export function TemplateBuilder() {
                 ...template,
                 graph: {
                   ...template.graph,
-                  nodes: template.graph.nodes.map((n) => (n.id === updated.id ? updated : n)),
+                  nodes: template.graph.nodes.map((n: any) => (n.id === updated.id ? updated : n)),
                 },
               };
               setTimeout(() => {
@@ -317,7 +338,7 @@ export function TemplateBuilder() {
                 ...template,
                 graph: {
                   ...template.graph,
-                  edges: template.graph.edges.map((e) => (e.from === selectedId ? (newEdges.find((x: any, idx: number) => x.to === e.to) || e) : e)),
+                  edges: template.graph.edges.map((e: any) => (e.from === selectedId ? (newEdges.find((x: any) => x.to === e.to) || e) : e)),
                 },
               } as any;
               setTimeout(() => {
@@ -333,8 +354,8 @@ export function TemplateBuilder() {
                 ...template,
                 graph: {
                   ...template.graph,
-                  nodes: template.graph.nodes.filter((n) => n.id !== selected.id),
-                  edges: template.graph.edges.filter((e) => e.from !== selected.id && e.to !== selected.id),
+                  nodes: template.graph.nodes.filter((n: any) => n.id !== selected.id),
+                  edges: template.graph.edges.filter((e: any) => e.from !== selected.id && e.to !== selected.id),
                 },
               };
               setTimeout(() => {
