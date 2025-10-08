@@ -40,6 +40,7 @@ export function CampaignsLive() {
         total_contacts: (typeof c.totalContacts === 'number' ? c.totalContacts : (Array.isArray(c.contacts) ? c.contacts.length : 0)) ?? 0,
         enriched_contacts: c.enrichedContacts ?? 0,
         emails_generated: c.emailsGenerated ?? 0,
+        template_id: c.templateId || undefined,
       }));
       replaceLiveCampaigns(mapped);
     }).catch(()=>{});

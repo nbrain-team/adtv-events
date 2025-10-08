@@ -13,6 +13,16 @@ const CONTACT_STATUSES = ['No Activity','Needs BDR','Received RSVP','Showed Up T
 export function CampaignBuilder() {
   const params = useParams();
   const { liveCampaigns, contactsByCampaignId, setContactsForCampaign, addToast, campaigns, updateLiveCampaign, upsertCampaign } = useStore();
+  const [serverTemplates, setServerTemplates] = useState<Array<{ id: string; name: string }>>([]);
+  useEffect(() => {
+    (async () => {
+      try {
+        const list = await apiTemplates.list();
+        const mapped = (Array.isArray(list) ? list : []).map((t: any) => ({ id: t.id, name: t.name }));
+        setServerTemplates(mapped);
+      } catch {}
+    })();
+  }, []);
   const campaign = useMemo(() => liveCampaigns.find((c) => c.id === params.id), [liveCampaigns, params.id]);
   const [tab, setTab] = useState<(typeof tabs)[number]>('Overview');
   if (!campaign) return <div className="text-gray-500">Campaign not found.</div>;
@@ -100,7 +110,7 @@ export function CampaignBuilder() {
                 <div className="flex gap-2">
                   <select className="input flex-1" value={campaign.template_id||''} onChange={(e)=> { updateLiveCampaign(campaign.id, { template_id: e.target.value }); }}>
                     <option value="">None</option>
-                    {campaigns.map((t)=> (
+                    {serverTemplates.map((t)=> (
                       <option key={t.id} value={t.id}>{t.name}</option>
                     ))}
                   </select>
