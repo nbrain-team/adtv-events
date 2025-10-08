@@ -270,9 +270,77 @@ app.post('/api/campaigns/:id/execute-sms', async (req, res) => {
 });
 
 app.patch('/api/campaigns/:id', async (req, res) => {
-  const body = z.object({ name: z.string().optional(), ownerName: z.string().optional(), ownerEmail: z.string().optional(), ownerPhone: z.string().optional(), city: z.string().optional(), state: z.string().optional(), videoLink: z.string().optional(), eventLink: z.string().optional(), eventType: z.string().optional(), eventDate: z.string().optional(), launchDate: z.string().optional(), hotelName: z.string().optional(), hotelAddress: z.string().optional(), calendlyLink: z.string().optional(), status: z.string().optional(), templateId: z.string().optional() }).partial().parse(req.body);
-  const updated = await prisma.campaign.update({ where: { id: req.params.id }, data: { ...body, eventDate: body.eventDate ? new Date(body.eventDate) : undefined, launchDate: body.launchDate ? new Date(body.launchDate) : undefined } });
-  res.json(updated);
+  try {
+    const body = z.object({
+      name: z.string().optional(),
+      ownerName: z.string().optional(),
+      ownerEmail: z.string().optional(),
+      ownerPhone: z.string().optional(),
+      city: z.string().optional(),
+      state: z.string().optional(),
+      videoLink: z.string().optional(),
+      eventLink: z.string().optional(),
+      eventType: z.string().optional(),
+      eventDate: z.string().optional(),
+      launchDate: z.string().optional(),
+      hotelName: z.string().optional(),
+      hotelAddress: z.string().optional(),
+      calendlyLink: z.string().optional(),
+      status: z.string().optional(),
+      templateId: z.string().optional(),
+      importGraph: z.boolean().optional(),
+    }).partial().parse(req.body);
+
+    const updated = await prisma.campaign.update({
+      where: { id: req.params.id },
+      data: {
+        ...body,
+        eventDate: body.eventDate ? new Date(body.eventDate) : undefined,
+        launchDate: body.launchDate ? new Date(body.launchDate) : undefined,
+      },
+    });
+
+    // If requested, replace campaign graph with the template's nodes/edges
+    if (body.importGraph && body.templateId) {
+      const [tplNodes, tplEdges] = await Promise.all([
+        prisma.node.findMany({ where: { templateId: body.templateId } }),
+        prisma.edge.findMany({ where: { templateId: body.templateId } }),
+      ]);
+
+      await prisma.$transaction([
+        prisma.campaignNode.deleteMany({ where: { campaignId: updated.id } }),
+        prisma.campaignEdge.deleteMany({ where: { campaignId: updated.id } }),
+      ]);
+
+      if (tplNodes.length > 0) {
+        await prisma.campaignNode.createMany({
+          data: tplNodes.map((n) => ({
+            campaignId: updated.id,
+            key: n.key,
+            type: n.type,
+            name: n.name,
+            configJson: n.configJson || null,
+            posX: n.posX ?? null,
+            posY: n.posY ?? null,
+          })),
+        });
+      }
+      if (tplEdges.length > 0) {
+        await prisma.campaignEdge.createMany({
+          data: tplEdges.map((e) => ({
+            campaignId: updated.id,
+            fromKey: e.fromKey,
+            toKey: e.toKey,
+            conditionJson: e.conditionJson || null,
+          })),
+        });
+      }
+    }
+
+    res.json(updated);
+  } catch (e: any) {
+    res.status(400).json({ error: e?.message || 'update error' });
+  }
 });
 
 // Contacts

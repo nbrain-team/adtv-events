@@ -97,12 +97,22 @@ export function CampaignBuilder() {
               </div>
               <div className="md:col-span-2">
                 <label className="label">Funnel Template</label>
-                <select className="input" value={campaign.template_id||''} onChange={(e)=> { updateLiveCampaign(campaign.id, { template_id: e.target.value }); apiCampaigns.patch(campaign.id, { templateId: e.target.value }).catch(()=>{}); }}>
-                  <option value="">None</option>
-                  {campaigns.map((t)=> (
-                    <option key={t.id} value={t.id}>{t.name}</option>
-                  ))}
-                </select>
+                <div className="flex gap-2">
+                  <select className="input flex-1" value={campaign.template_id||''} onChange={(e)=> { updateLiveCampaign(campaign.id, { template_id: e.target.value }); }}>
+                    <option value="">None</option>
+                    {campaigns.map((t)=> (
+                      <option key={t.id} value={t.id}>{t.name}</option>
+                    ))}
+                  </select>
+                  <button className="btn-primary btn-sm" onClick={async ()=> {
+                    try {
+                      await apiCampaigns.patch(campaign.id, { templateId: campaign.template_id, importGraph: true });
+                      addToast({ title: 'Funnel saved', description: 'Template attached and graph imported', variant: 'success' });
+                    } catch (e) {
+                      addToast({ title: 'Failed to save funnel', description: String((e as any)?.message||'error'), variant: 'error' });
+                    }
+                  }}>Save</button>
+                </div>
               </div>
             </div>
             <div className="mt-4">
