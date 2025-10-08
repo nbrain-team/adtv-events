@@ -517,6 +517,9 @@ app.post('/api/campaigns/:id/execute', async (req, res) => {
             } else {
               audioUrl = tts.audioUrl;
             }
+          } else if (!tts.ok) {
+            // eslint-disable-next-line no-console
+            console.warn('[execute] ElevenLabs TTS failed', tts.raw);
           }
         } catch {}
         const r = await sendVoicemailDrop({ to: ct.phone, audioUrl: audioUrl || undefined, callerId: process.env.SLYBROADCAST_CALLER_ID || undefined, campaignId: campaign?.id });
