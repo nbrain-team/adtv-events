@@ -12,7 +12,7 @@ const CONTACT_STATUSES = ['No Activity','Needs BDR','Received RSVP','Showed Up T
 
 export function CampaignBuilder() {
   const params = useParams();
-  const { liveCampaigns, contactsByCampaignId, setContactsForCampaign, addToast, campaigns, updateLiveCampaign } = useStore();
+  const { liveCampaigns, contactsByCampaignId, setContactsForCampaign, addToast, campaigns, updateLiveCampaign, upsertCampaign } = useStore();
   const campaign = useMemo(() => liveCampaigns.find((c) => c.id === params.id), [liveCampaigns, params.id]);
   const [tab, setTab] = useState<(typeof tabs)[number]>('Overview');
   if (!campaign) return <div className="text-gray-500">Campaign not found.</div>;
@@ -114,7 +114,11 @@ export function CampaignBuilder() {
                           const created = await apiTemplates.create(localTpl.name || 'Template', { nodes: localTpl.graph.nodes, edges: localTpl.graph.edges });
                           if (created && created.id) {
                             effectiveTemplateId = created.id;
+                            // Update local store entries: selected campaign's template_id and campaigns list (replace tpl_* with server id)
                             updateLiveCampaign(campaign.id, { template_id: created.id });
+                            try {
+                              upsertCampaign({ ...localTpl, id: created.id });
+                            } catch {}
                           }
                         }
                       }
