@@ -102,6 +102,7 @@ async function resolveSmsTextFromConfig(config: any): Promise<string> {
   try {
     if (config?.text) return String(config.text);
     if (config?.message) return String(config.message);
+    if (config?.content?.text) return String(config.content.text);
     if (config?.template_id) {
       const templates = await loadContentTemplates();
       const t = templates.find((x) => x.id === config.template_id && x.type === 'sms');
@@ -115,6 +116,9 @@ async function resolveEmailFromConfig(config: any): Promise<{ subject: string; b
   try {
     if (config?.content && (config.content.subject || config.content.body)) {
       return { subject: String(config.content.subject || ''), body: String(config.content.body || '') };
+    }
+    if (config?.content?.text) {
+      return { subject: '', body: String(config.content.text) };
     }
     if (config?.template_id) {
       const templates = await loadContentTemplates();
