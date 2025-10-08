@@ -89,6 +89,15 @@ function renderMergeTags(input: string, ctx: Record<string, any>): string {
   });
 }
 
+function splitName(full: string): { first_name: string; last_name: string } {
+  const raw = String(full || '').trim();
+  if (!raw) return { first_name: '', last_name: '' };
+  const parts = raw.split(/\s+/);
+  const first = parts.shift() || '';
+  const last = parts.join(' ');
+  return { first_name: first, last_name: last };
+}
+
 async function resolveSmsTextFromConfig(config: any): Promise<string> {
   try {
     if (config?.text) return String(config.text);
@@ -366,8 +375,9 @@ app.post('/api/campaigns/:id/execute-sms', async (req, res) => {
       })();
       const cfgFirst = typeof msgTextRaw === 'string' ? { text: msgTextRaw } : (msgTextRaw || {});
       const resolvedText = await resolveSmsTextFromConfig(cfgFirst);
-      const msgText = renderMergeTags(resolvedText || `Hi {{contact.name}}`, {
-        contact: { name: contact.name, email: contact.email, phone: contact.phone },
+      const np = splitName(contact.name || '');
+      const msgText = renderMergeTags(resolvedText || `Hi {{contact.first_name}}`, {
+        contact: { name: contact.name, first_name: np.first_name, last_name: np.last_name, email: contact.email, phone: contact.phone },
         campaign: {},
       }).trim();
 
@@ -423,7 +433,8 @@ app.post('/api/campaigns/:id/execute', async (req, res) => {
       const baseText = await resolveSmsTextFromConfig(cfg);
       for (const ct of contacts) {
         if (!ct.phone) continue;
-        const text = renderMergeTags(baseText, { contact: { name: ct.name, email: ct.email, phone: ct.phone }, campaign: campaignCtx }).trim();
+        const np = splitName(ct.name || '');
+        const text = renderMergeTags(baseText, { contact: { name: ct.name, first_name: np.first_name, last_name: np.last_name, email: ct.email, phone: ct.phone }, campaign: campaignCtx }).trim();
         const resSms = await sendSms({ to: ct.phone, text });
         let convo = await prisma.conversation.findFirst({ where: { contactId: ct.id, channel: 'sms' } });
         if (!convo) convo = await prisma.conversation.create({ data: { contactId: ct.id, channel: 'sms' } });
@@ -438,8 +449,9 @@ app.post('/api/campaigns/:id/execute', async (req, res) => {
       const { subject, body: emailBody } = await resolveEmailFromConfig(cfg);
       for (const ct of contacts) {
         if (!ct.email) continue;
-        const sub = renderMergeTags(subject || '', { contact: { name: ct.name, email: ct.email, phone: ct.phone }, campaign: campaignCtx }).trim();
-        const bod = renderMergeTags(emailBody || '', { contact: { name: ct.name, email: ct.email, phone: ct.phone }, campaign: campaignCtx }).trim();
+        const np = splitName(ct.name || '');
+        const sub = renderMergeTags(subject || '', { contact: { name: ct.name, first_name: np.first_name, last_name: np.last_name, email: ct.email, phone: ct.phone }, campaign: campaignCtx }).trim();
+        const bod = renderMergeTags(emailBody || '', { contact: { name: ct.name, first_name: np.first_name, last_name: np.last_name, email: ct.email, phone: ct.phone }, campaign: campaignCtx }).trim();
         try {
           await (async () => {
             const payload = { to: ct.email!, subject: sub, body: bod } as any;
@@ -579,8 +591,18 @@ app.post('/api/campaigns/:id/contacts/bulk', async (req, res) => {
 });
 
 app.post('/api/campaigns/:id/contacts', async (req, res) => {
-  const c = z.object({ name: z.string(), email: z.string().optional(), phone: z.string().optional(), status: z.string().optional(), stageId: z.string().optional(), raw: z.any().optional() }).parse(req.body);
-  const created = await prisma.contact.create({ data: { campaignId: req.params.id, name: c.name, email: c.email, phone: c.phone, status: c.status||'No Activity', stageKey: c.stageId||null, rawJson: c.raw?JSON.stringify(c.raw):null } });
+  const c = z.object({
+    name: z.string().optional(),
+    firstName: z.string().optional(),
+    lastName: z.string().optional(),
+    email: z.string().optional(),
+    phone: z.string().optional(),
+    status: z.string().optional(),
+    stageId: z.string().optional(),
+    raw: z.any().optional(),
+  }).parse(req.body);
+  const fullName = (c.name && c.name.trim()) || `${(c.firstName||'').trim()} ${(c.lastName||'').trim()}`.trim() || 'Contact';
+  const created = await prisma.contact.create({ data: { campaignId: req.params.id, name: fullName, email: c.email, phone: c.phone, status: c.status||'No Activity', stageKey: c.stageId||null, rawJson: c.raw?JSON.stringify(c.raw):null } });
   // Create Bonzo prospect and opt in for SMS (best-effort)
   try {
     const names = String(c.name||'').split(' ');
@@ -637,6 +659,8 @@ app.patch('/api/contacts/:id', async (req, res) => {
   try {
     const body = z.object({
       name: z.string().optional(),
+      firstName: z.string().optional(),
+      lastName: z.string().optional(),
       company: z.string().optional(),
       email: z.string().nullable().optional(),
       phone: z.string().nullable().optional(),
@@ -647,10 +671,11 @@ app.patch('/api/contacts/:id', async (req, res) => {
       stageId: z.string().nullable().optional(),
       raw: z.any().optional(),
     }).parse(req.body);
+    const nameFromParts = `${(body.firstName||'').trim()} ${(body.lastName||'').trim()}`.trim();
     const updated = await prisma.contact.update({
       where: { id: req.params.id },
       data: {
-        name: body.name as any,
+        name: (body.name ? body.name : (nameFromParts || undefined)) as any,
         company: body.company as any,
         email: (body.email ?? undefined) as any,
         phone: (body.phone ?? undefined) as any,
