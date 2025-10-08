@@ -22,10 +22,13 @@ export const apiTemplates = {
   get: (id: string) => getJson(`/api/templates/${id}`),
   create: (name: string, graph: { nodes: any[]; edges: any[] }) => sendJson('POST', '/api/templates', { name, graph }),
   saveGraph: (id: string, graph: { nodes: any[]; edges: any[] }) => sendJson('PUT', `/api/templates/${id}/graph`, graph),
+  delete: (id: string) => sendJson('DELETE', `/api/templates/${id}`),
 };
 
 export const apiContentTemplates = {
   list: () => getJson('/api/content-templates') as Promise<Array<{ id: string; type: 'email'|'sms'|'voicemail'; name: string; subject?: string; body?: string; text?: string; tts_script?: string }>>,
+  create: (tpl: { type: 'email'|'sms'|'voicemail'; name: string; subject?: string; body?: string; text?: string; tts_script?: string }) => sendJson('POST', '/api/content-templates', tpl),
+  delete: (id: string) => sendJson('DELETE', `/api/content-templates/${id}`),
 };
 
 // Campaigns

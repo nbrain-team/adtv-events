@@ -154,13 +154,17 @@ export function TemplatesFunnel() {
                   </div>
                   <div className="flex items-center gap-2">
                     <span className="badge-secondary">Edit</span>
-                    <button className="btn-outline btn-xs" onClick={(e)=> { e.preventDefault(); e.stopPropagation();
+                    <button className="btn-outline btn-xs" onClick={async (e)=> { e.preventDefault(); e.stopPropagation();
                       const ok = window.confirm('Delete this content template?');
                       if (!ok) return;
-                      // Remove from local store only; content templates come from CSV on server
-                      const next = contentTemplates.filter((x: any) => x.id !== t.id);
-                      (useStore.getState() as any).contentTemplates = next; // mutate store state for simplicity
-                      addToast({ title: 'Content template deleted', description: t.name, variant: 'success' });
+                      try {
+                        await apiContentTemplates.delete(t.id);
+                        const next = contentTemplates.filter((x: any) => x.id !== t.id);
+                        (useStore.getState() as any).contentTemplates = next;
+                        addToast({ title: 'Content template deleted', description: t.name, variant: 'success' });
+                      } catch (err: any) {
+                        addToast({ title: 'Delete failed', description: String(err?.message||'error'), variant: 'error' });
+                      }
                     }}>Delete</button>
                   </div>
                 </div>
@@ -270,13 +274,21 @@ export function TemplatesFunnel() {
             )}
 
             <div className="flex items-center gap-2 justify-end">
-              <button className="btn-outline btn-sm" onClick={()=> { resetTplForm(); setOpenTpl(false); }}>Cancel</button>
-              <button className="btn-primary btn-sm" onClick={()=> {
-                const id = editingTplId || Math.random().toString(36).slice(2);
-                upsertContentTemplate({ id, type: tplType, name: tplName, subject: tplSubject, body: tplBody, text: tplText, tts_script: tplScript });
-                addToast({ title: 'Template saved', description: tplName, variant: 'success' });
-                resetTplForm();
-                setOpenTpl(false);
+          <button className="btn-outline btn-sm" onClick={()=> { resetTplForm(); setOpenTpl(false); }}>Cancel</button>
+          <button className="btn-primary btn-sm" onClick={async ()=> {
+                try {
+                  if (editingTplId) {
+                    // Simple approach: delete and recreate for now
+                    await apiContentTemplates.delete(editingTplId);
+                  }
+                  const created = await apiContentTemplates.create({ type: tplType, name: tplName, subject: tplSubject, body: tplBody, text: tplText, tts_script: tplScript });
+                  upsertContentTemplate(created as any);
+                  addToast({ title: 'Template saved', description: tplName, variant: 'success' });
+                  resetTplForm();
+                  setOpenTpl(false);
+                } catch (e: any) {
+                  addToast({ title: 'Save failed', description: String(e?.message||'error'), variant: 'error' });
+                }
               }}>Save</button>
             </div>
 
