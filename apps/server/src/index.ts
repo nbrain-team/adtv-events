@@ -24,12 +24,28 @@ const prisma = new PrismaClient();
 // Content templates loader (CSV from repo root), with simple cache
 type ContentTemplate = { id: string; type: 'email'|'sms'|'voicemail'; name: string; subject?: string; body?: string; text?: string; tts_script?: string };
 let contentTemplatesCache: { at: number; items: ContentTemplate[] } | null = null;
+
+function resolveTemplatesCsvPath(): string | null {
+  const candidates = [
+    // When running from built dist (apps/server/dist/src)
+    path.resolve(__dirname, '../../../../templates.csv'),
+    // When running with cwd at apps/server
+    path.resolve(process.cwd(), '../../templates.csv'),
+    // Fallbacks
+    path.resolve(process.cwd(), '../templates.csv'),
+    path.resolve(process.cwd(), 'templates.csv'),
+  ];
+  for (const p of candidates) {
+    if (fs.existsSync(p)) return p;
+  }
+  return null;
+}
 async function loadContentTemplates(): Promise<ContentTemplate[]> {
   try {
     const now = Date.now();
     if (contentTemplatesCache && now - contentTemplatesCache.at < 60_000) return contentTemplatesCache.items;
-    const csvPath = path.resolve(__dirname, '../../../templates.csv');
-    if (!fs.existsSync(csvPath)) {
+    const csvPath = resolveTemplatesCsvPath();
+    if (!csvPath) {
       contentTemplatesCache = { at: now, items: [] };
       return [];
     }
@@ -100,30 +116,39 @@ function splitName(full: string): { first_name: string; last_name: string } {
 
 async function resolveSmsTextFromConfig(config: any): Promise<string> {
   try {
-    if (config?.text) return String(config.text);
-    if (config?.message) return String(config.message);
-    if (config?.content?.text) return String(config.content.text);
     if (config?.template_id) {
       const templates = await loadContentTemplates();
       const t = templates.find((x) => x.id === config.template_id && x.type === 'sms');
       if (t?.text) return String(t.text);
+      // Template specified but not found: strict mode -> empty
+      // eslint-disable-next-line no-console
+      console.warn('[execute] SMS template not found or empty for id:', config.template_id);
+      return '';
     }
+    // No template selected: allow custom content
+    if (config?.text) return String(config.text);
+    if (config?.message) return String(config.message);
+    if (config?.content?.text) return String(config.content.text);
   } catch {}
   return '';
 }
 
 async function resolveEmailFromConfig(config: any): Promise<{ subject: string; body: string }> {
   try {
+    if (config?.template_id) {
+      const templates = await loadContentTemplates();
+      const t = templates.find((x) => x.id === config.template_id && x.type === 'email');
+      if (t) return { subject: String(t.subject || ''), body: String(t.body || '') };
+      // eslint-disable-next-line no-console
+      console.warn('[execute] Email template not found for id:', config.template_id);
+      return { subject: '', body: '' };
+    }
+    // No template selected: allow custom content
     if (config?.content && (config.content.subject || config.content.body)) {
       return { subject: String(config.content.subject || ''), body: String(config.content.body || '') };
     }
     if (config?.content?.text) {
       return { subject: '', body: String(config.content.text) };
-    }
-    if (config?.template_id) {
-      const templates = await loadContentTemplates();
-      const t = templates.find((x) => x.id === config.template_id && x.type === 'email');
-      if (t) return { subject: String(t.subject || ''), body: String(t.body || '') };
     }
   } catch {}
   return { subject: '', body: '' };
@@ -131,12 +156,15 @@ async function resolveEmailFromConfig(config: any): Promise<{ subject: string; b
 
 async function resolveVoicemailScriptFromConfig(config: any): Promise<string> {
   try {
-    if (config?.tts?.custom_script) return String(config.tts.custom_script);
     if (config?.template_id) {
       const templates = await loadContentTemplates();
       const t = templates.find((x) => x.id === config.template_id && x.type === 'voicemail');
       if (t?.tts_script) return String(t.tts_script);
+      // eslint-disable-next-line no-console
+      console.warn('[execute] Voicemail template not found for id:', config.template_id);
+      return '';
     }
+    if (config?.tts?.custom_script) return String(config.tts.custom_script);
   } catch {}
   return '';
 }
@@ -275,8 +303,8 @@ app.get('/api/content-templates', async (_req, res) => {
       return { body: raw.trim() };
     };
 
-    const csvPath = path.resolve(__dirname, '../../../templates.csv');
-    if (!fs.existsSync(csvPath)) {
+    const csvPath = resolveTemplatesCsvPath();
+    if (!csvPath) {
       return res.status(404).json({ error: 'templates.csv not found' });
     }
     const csv = fs.readFileSync(csvPath, 'utf8');
