@@ -396,7 +396,9 @@ function Inspector({ node, edgesOut, onChange, onChangeEdges, onDelete }: Inspec
   const { contentTemplates } = useStore();
 
   const typeMap: Record<string, 'email'|'sms'|'voicemail' | undefined> = { email_send: 'email', sms_send: 'sms', voicemail_drop: 'voicemail' };
-  const availableTemplates = (typeMap[node.type] ? contentTemplates.filter((t) => t.type === typeMap[node.type]) : []);
+  const availableTemplates = (typeMap[node.type]
+    ? contentTemplates.filter((t) => t.type === typeMap[node.type] && typeof t.id === 'string' && t.id.startsWith('ct_'))
+    : []);
 
   useEffect(() => { setEdgesDraft(edgesOut || []); }, [edgesOut]);
 
@@ -535,6 +537,10 @@ function Inspector({ node, edgesOut, onChange, onChangeEdges, onDelete }: Inspec
             const updated = { ...node, name } as any;
             if (node.type === 'email_send' || node.type === 'sms_send' || node.type==='voicemail_drop') {
               if (mode==='template') {
+                if (!templateId || !templateId.startsWith('ct_')) {
+                  (useStore.getState() as any).addToast({ title: 'Select a published content template', description: 'Choose a template from the server list (ct_*)', variant: 'error' });
+                  return;
+                }
                 updated.config = { ...(node.config||{}), template_id: templateId, content: undefined };
               } else {
                 if (node.type==='email_send') updated.config = { ...(node.config||{}), content: { subject: emailSubject, body: emailBody } };
