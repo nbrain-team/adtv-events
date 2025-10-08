@@ -111,8 +111,9 @@ export function TemplatesFunnel() {
                     const confirmDel = window.confirm('Delete this funnel template?');
                     if (!confirmDel) return;
                     try {
-                      await fetch(`${(import.meta as any).env?.VITE_API_URL || ''}/api/templates/${c.id}`, { method: 'DELETE' });
-                      setCampaigns((prev: any[]) => prev.filter((x) => x.id !== c.id));
+                      const resp = await fetch(`${(import.meta as any).env?.VITE_API_URL || ''}/api/templates/${c.id}`, { method: 'DELETE' });
+                      if (!resp.ok) throw new Error('Delete failed');
+                      setCampaigns((prev: any[]) => (Array.isArray(prev) ? prev.filter((x: any) => x.id !== c.id) : []));
                       addToast({ title: 'Template deleted', description: c.name, variant: 'success' });
                     } catch (err: any) {
                       addToast({ title: 'Delete failed', description: String(err?.message||'error'), variant: 'error' });
