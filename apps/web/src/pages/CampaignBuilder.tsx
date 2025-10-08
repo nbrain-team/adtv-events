@@ -388,7 +388,7 @@ function ContactsTab({ contacts }: ContactsTabProps) {
                 const cid = window.location.pathname.split('/').pop() || '';
                 const mapped = rows.map((r) => ({
                   id: Math.random().toString(36).slice(2),
-                  name: r.name || r.Name || '-',
+                  name: (r.firstName || r['First Name'] || r.Name || r.name || '') + ' ' + (r.lastName || r['Last Name'] || ''),
                   company: r.company || r.Company || '',
                   email: r.Email || r.email || '',
                   phone: r.Phone || r.phone || '',
@@ -410,7 +410,10 @@ function ContactsTab({ contacts }: ContactsTabProps) {
           <button className="btn-outline btn-sm" onClick={()=> {
             const cid = window.location.pathname.split('/').pop() || '';
             const list = (contactsByCampaignId as any)[cid] || [];
-            const csv = ['Name,Company,Email,Phone,City,State,Status,StageId', ...list.map((c:any)=> [c.name,c.company,c.email,c.phone,c.city,c.state,c.status,c.stageId||''].map((v:string)=>`"${String(v??'').replace(/"/g,'\"')}"`).join(','))].join('\n');
+            const csv = ['First Name,Last Name,Company,Email,Phone,City,State,Status,StageId', ...list.map((c:any)=> {
+              const parts = String(c.name||'').trim().split(/\s+/); const first = parts.shift()||''; const last = parts.join(' ');
+              return [first,last,c.company,c.email,c.phone,c.city,c.state,c.status,c.stageId||''].map((v:string)=>`"${String(v??'').replace(/"/g,'\"')}"`).join(',');
+            })].join('\n');
             const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a'); a.href = url; a.download = `contacts_${cid}.csv`; a.click(); URL.revokeObjectURL(url);
@@ -429,7 +432,8 @@ function ContactsTab({ contacts }: ContactsTabProps) {
               <th className="py-2 w-10">
                 <input type="checkbox" checked={allChecked} ref={(el)=> { if (el) el.indeterminate = !allChecked && someChecked; }} onChange={toggleAll} />
               </th>
-              <th className="py-2">Name</th>
+              <th className="py-2">First Name</th>
+              <th className="py-2">Last Name</th>
               <th className="py-2">Company</th>
               <th className="py-2">Email</th>
               <th className="py-2">Phone</th>
@@ -445,7 +449,8 @@ function ContactsTab({ contacts }: ContactsTabProps) {
                   <td className="py-2" onClick={(e)=> e.stopPropagation()}>
                     <input type="checkbox" checked={selectedIds.has(c.id)} onChange={()=> toggleOne(c.id)} />
                   </td>
-                  <td className="py-2 font-medium">{c.name}</td>
+                  <td className="py-2 font-medium">{(() => { const p=(c.name||'').trim().split(/\s+/); return p.shift()||''; })()}</td>
+                  <td className="py-2">{(() => { const p=(c.name||'').trim().split(/\s+/); p.shift(); return p.join(' '); })()}</td>
                   <td className="py-2">{c.company}</td>
                   <td className="py-2">{c.email}</td>
                   <td className="py-2">{c.phone}</td>
@@ -455,7 +460,7 @@ function ContactsTab({ contacts }: ContactsTabProps) {
                   </td>
                   <td className="py-2 text-xs flex items-center gap-2" onClick={(e)=> e.stopPropagation()}>
                     <span>{(c as any).stageId || '-'}</span>
-                    <button className="btn-outline btn-xs" onClick={()=> { setEditContactId(c.id); setEditForm({ name: c.name, email: c.email||'', phone: c.phone||'', company: c.company||'', city: c.city||'', state: c.state||'', url: c.url||'', status: c.status, stageId: (c as any).stageId||'' }); }}>Edit</button>
+                    <button className="btn-outline btn-xs" onClick={()=> { setEditContactId(c.id); setEditForm({ firstName: ((c.name||'').trim().split(/\s+/)[0]||''), lastName: (()=>{ const p=(c.name||'').trim().split(/\s+/); p.shift(); return p.join(' '); })(), email: c.email||'', phone: c.phone||'', company: c.company||'', city: c.city||'', state: c.state||'', url: c.url||'', status: c.status, stageId: (c as any).stageId||'' }); }}>Edit</button>
                   </td>
                 </tr>
                 {expandedId===c.id && (
@@ -520,7 +525,15 @@ function ContactsTab({ contacts }: ContactsTabProps) {
             <button className="btn-outline btn-sm" onClick={()=> setEditContactId(null)}>Close</button>
           </div>
           <div className="grid md:grid-cols-2 gap-3">
-            {['name','email','phone','company','city','state','url'].map((k)=> (
+            <div>
+              <label className="label">First Name</label>
+              <input className="input" value={editForm.firstName||''} onChange={(e)=> setEditForm((f:any)=> ({ ...f, firstName: e.target.value }))} />
+            </div>
+            <div>
+              <label className="label">Last Name</label>
+              <input className="input" value={editForm.lastName||''} onChange={(e)=> setEditForm((f:any)=> ({ ...f, lastName: e.target.value }))} />
+            </div>
+            {['email','phone','company','city','state','url'].map((k)=> (
               <div key={k} className={k==='url'?'md:col-span-2':''}>
                 <label className="label">{k.replace(/_/g,' ').replace(/\b\w/g, (m)=> m.toUpperCase())}</label>
                 <input className="input" value={editForm[k]||''} onChange={(e)=> setEditForm((f:any)=> ({ ...f, [k]: e.target.value }))} />
@@ -543,10 +556,10 @@ function ContactsTab({ contacts }: ContactsTabProps) {
               try {
                 await fetch(`${(import.meta as any).env?.VITE_API_URL || ''}/api/contacts/${editContactId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(editForm) });
               } catch {}
-              const updated = (contactsByCampaignId as any)[campaignId]?.map((c:any)=> c.id===editContactId ? { ...c, ...editForm } : c) || [];
+              const updated = (contactsByCampaignId as any)[campaignId]?.map((c:any)=> c.id===editContactId ? { ...c, name: `${editForm.firstName||''} ${editForm.lastName||''}`.trim(), email: editForm.email, phone: editForm.phone, company: editForm.company, city: editForm.city, state: editForm.state, url: editForm.url, status: editForm.status, stageId: editForm.stageId } : c) || [];
               setContactsForCampaign(campaignId, updated);
               setEditContactId(null);
-              addToast({ title: 'Contact updated', description: editForm.name, variant: 'success' });
+              addToast({ title: 'Contact updated', description: `${editForm.firstName||''} ${editForm.lastName||''}`.trim(), variant: 'success' });
             }}>Save</button>
           </div>
         </div>

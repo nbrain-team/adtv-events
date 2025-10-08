@@ -39,7 +39,7 @@ export async function sendVoicemailDrop(input: VoicemailDropInput): Promise<Voic
     return { queued: false, provider: 'mock' };
   }
 
-  const baseUrl = process.env.SLYBROADCAST_API_BASE_URL || 'https://www.slybroadcast.com/gateway/vmb.php';
+  const baseUrl = process.env.SLYBROADCAST_API_BASE_URL || 'https://www.mobile-sphere.com/gateway/vmb.php';
   const user = process.env.SLYBROADCAST_USERNAME || '';
   const password = process.env.SLYBROADCAST_PASSWORD || '';
 
@@ -55,20 +55,18 @@ export async function sendVoicemailDrop(input: VoicemailDropInput): Promise<Voic
   // Reject data: URLs since Slybroadcast must fetch a public URL
   const isDataUrl = !!(input.audioUrl && input.audioUrl.startsWith('data:'));
   let audio_url = (!isDataUrl && input.audioUrl) ? input.audioUrl : (process.env.SLYBROADCAST_DEFAULT_AUDIO_URL || '');
+  const audio_ext = (audio_url || '').toLowerCase().endsWith('.m4a') ? 'm4a' : ((audio_url || '').toLowerCase().endsWith('.wav') ? 'wav' : 'mp3');
 
   const payload: Record<string, string> = {
-    // see API for keys; 'cid' is campaign id, 'caller_id', 'audio_url'
+    // Per docs: https://www.slybroadcast.com/documentation.php
     'c_uid': user,
     'c_password': password,
-    'campaign_id': input.campaignId || '',
-    'caller_id': input.callerId || input.from || '',
-    'audio_url': audio_url,
-    'list': numbers,
-    's': input.scheduleAt ? '1' : '0',
-    'date': input.scheduleAt || '',
-    'msg': input.note || '',
-    'source': 'adtv-event-automation',
-    'method': 'send_blast',
+    'c_url': audio_url,
+    'c_audio': audio_ext,
+    'c_phone': numbers,
+    'c_callerID': input.callerId || input.from || '',
+    'c_date': input.scheduleAt || 'now',
+    'c_title': input.campaignId || '',
   };
 
   const form = new URLSearchParams();

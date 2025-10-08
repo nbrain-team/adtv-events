@@ -9,6 +9,7 @@ import { createProspect as bonzoCreateProspect, optInProspect as bonzoOptIn } fr
 import { sendVoicemailDrop } from './services/voicemailProvider';
 import { generateTtsMp3 } from './services/elevenLabs';
 import { storeVoicemailMp3, getVoicemailMp3 } from './services/mediaStore';
+import { sendVoicemailDrop } from './services/voicemailProvider';
 import dotenv from 'dotenv';
 import fs from 'fs';
 import path from 'path';
@@ -123,6 +124,18 @@ async function resolveEmailFromConfig(config: any): Promise<{ subject: string; b
     }
   } catch {}
   return { subject: '', body: '' };
+}
+
+async function resolveVoicemailScriptFromConfig(config: any): Promise<string> {
+  try {
+    if (config?.tts?.custom_script) return String(config.tts.custom_script);
+    if (config?.template_id) {
+      const templates = await loadContentTemplates();
+      const t = templates.find((x) => x.id === config.template_id && x.type === 'voicemail');
+      if (t?.tts_script) return String(t.tts_script);
+    }
+  } catch {}
+  return '';
 }
 // Outbound SMS via provider adapter (Bonzo/Twilio)
 app.post('/api/sms/send', async (req, res) => {
@@ -406,9 +419,11 @@ app.post('/api/campaigns/:id/execute', async (req, res) => {
     ]);
     const firstSms = nodes.find((n) => n.type === 'sms_send' && (!body.nodeKey || n.key === body.nodeKey));
     const firstEmail = nodes.find((n) => n.type === 'email_send' && (!body.nodeKey || n.key === body.nodeKey));
+    const firstVm = nodes.find((n) => n.type === 'voicemail_drop' && (!body.nodeKey || n.key === body.nodeKey));
 
     let smsSent = 0;
     let emailSent = 0;
+    let vmQueued = 0;
     const campaignCtx = {
       name: campaign?.name,
       owner_name: campaign?.ownerName,
@@ -468,7 +483,35 @@ app.post('/api/campaigns/:id/execute', async (req, res) => {
       }
     }
 
-    res.json({ ok: true, smsSent, emailSent });
+    if (firstVm) {
+      let cfg: any = {};
+      try { cfg = firstVm.configJson ? JSON.parse(firstVm.configJson) : {}; } catch {}
+      const baseScript = await resolveVoicemailScriptFromConfig(cfg);
+      for (const ct of contacts) {
+        if (!ct.phone) continue;
+        const np = splitName(ct.name || '');
+        const script = renderMergeTags(baseScript, { contact: { name: ct.name, first_name: np.first_name, last_name: np.last_name, email: ct.email, phone: ct.phone }, campaign: campaignCtx });
+        let audioUrl = '';
+        try {
+          const tts = await generateTtsMp3({ script });
+          if (tts.ok && tts.audioUrl) {
+            if (tts.audioUrl.startsWith('data:audio/mpeg;base64,')) {
+              const b64 = tts.audioUrl.replace('data:audio/mpeg;base64,', '');
+              const buf = Buffer.from(b64, 'base64');
+              const id = storeVoicemailMp3(buf);
+              const base = (process.env.PUBLIC_BASE_URL || '');
+              audioUrl = `${String(base).replace(/\/$/, '')}/media/vm/${id}.mp3`;
+            } else {
+              audioUrl = tts.audioUrl;
+            }
+          }
+        } catch {}
+        const r = await sendVoicemailDrop({ to: ct.phone, audioUrl: audioUrl || undefined, callerId: process.env.SLYBROADCAST_CALLER_ID || undefined, campaignId: campaign?.id });
+        if (r.queued) vmQueued++;
+      }
+    }
+
+    res.json({ ok: true, smsSent, emailSent, vmQueued });
   } catch (e: any) {
     res.status(400).json({ error: e?.message || 'execute error' });
   }
