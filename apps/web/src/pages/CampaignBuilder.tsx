@@ -4,7 +4,7 @@ import { useParams } from 'react-router-dom';
 import { useStore } from '@store/useStore';
 import Papa from 'papaparse';
 import { seedCampaigns } from '@seed/campaignSeed';
-import { apiCampaigns, apiInbox, apiEmail, apiSms } from '@lib/api';
+import { apiCampaigns, apiInbox, apiEmail, apiSms, apiTemplates } from '@lib/api';
 
 const tabs = ['Overview','Contacts','Analytics','Map View'] as const;
 
@@ -106,7 +106,19 @@ export function CampaignBuilder() {
                   </select>
                   <button className="btn-primary btn-sm" onClick={async ()=> {
                     try {
-                      await apiCampaigns.patch(campaign.id, { templateId: campaign.template_id, importGraph: true });
+                      let effectiveTemplateId = campaign.template_id || '';
+                      // If selected template is local-only (tpl_*), create it on the server first
+                      if (effectiveTemplateId && /^tpl_/i.test(effectiveTemplateId)) {
+                        const localTpl = (Array.isArray(campaigns) ? campaigns : []).find((t: any) => t && t.id === effectiveTemplateId);
+                        if (localTpl && localTpl.graph && Array.isArray(localTpl.graph.nodes) && Array.isArray(localTpl.graph.edges)) {
+                          const created = await apiTemplates.create(localTpl.name || 'Template', { nodes: localTpl.graph.nodes, edges: localTpl.graph.edges });
+                          if (created && created.id) {
+                            effectiveTemplateId = created.id;
+                            updateLiveCampaign(campaign.id, { template_id: created.id });
+                          }
+                        }
+                      }
+                      await apiCampaigns.patch(campaign.id, { templateId: effectiveTemplateId, importGraph: true });
                       addToast({ title: 'Funnel saved', description: 'Template attached and graph imported', variant: 'success' });
                     } catch (e) {
                       addToast({ title: 'Failed to save funnel', description: String((e as any)?.message||'error'), variant: 'error' });
