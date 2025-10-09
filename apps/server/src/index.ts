@@ -253,7 +253,7 @@ app.get('/media/vm/:id.mp3', async (req, res) => {
 });
 
 // Dev-only: upload a raw MP3 and get a public URL for Slybroadcast testing
-app.post('/media/upload/raw', express.raw({ type: '*/*', limit: '20mb' }), async (req, res) => {
+app.post('/media/upload/raw', express.raw({ type: '*/*', limit: '100mb' }), async (req, res) => {
   try {
     const bodyBuf = Buffer.isBuffer((req as any).body) ? (req as any).body : Buffer.from((req as any).body || '');
     if (!bodyBuf || bodyBuf.length === 0) return res.status(400).json({ error: 'empty body' });
