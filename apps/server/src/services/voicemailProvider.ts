@@ -11,7 +11,7 @@ export type VoicemailDropInput = {
 
 export type VoicemailDropResult = {
   queued: boolean;
-  provider: 'dropcowboy' | 'mock';
+  provider: 'slybroadcast' | 'mock';
   id?: string;
   raw?: any;
 };
@@ -33,52 +33,61 @@ function doFetch(url: string, init?: any) {
 }
 
 export async function sendVoicemailDrop(input: VoicemailDropInput): Promise<VoicemailDropResult> {
-  const provider = 'dropcowboy';
-
-  const endpoint = (process.env.DROPCOWBOY_API_URL || '').trim() || `${(process.env.DROPCOWBOY_API_BASE_URL || 'https://api.dropcowboy.com/v1').replace(/\/$/, '')}/voicemail`;
-  const apiKey = process.env.DROPCOWBOY_API_KEY || '';
-  const apiSecret = process.env.DROPCOWBOY_API_SECRET || '';
-  const bearer = process.env.DROPCOWBOY_BEARER_TOKEN || '';
-
-  const toNumber = normalizePhone10(input.to);
-  const callerId = normalizePhone10(input.callerId || input.from || '');
-  const audioUrl = (input.audioUrl || '').startsWith('data:') ? '' : (input.audioUrl || '');
-  if (!audioUrl) {
-    return { queued: false, provider, raw: { error: 'audioUrl required' } };
-  }
-  if (!toNumber) {
-    return { queued: false, provider, raw: { error: 'destination required' } };
+  const provider = (process.env.VOICEMAIL_PROVIDER || 'slybroadcast').toLowerCase();
+  if (provider !== 'slybroadcast') {
+    return { queued: false, provider: 'mock' };
   }
 
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  if (bearer) headers['Authorization'] = `Bearer ${bearer}`;
-  if (!bearer && apiKey) headers['X-API-KEY'] = apiKey;
-  if (!bearer && apiSecret) headers['X-API-SECRET'] = apiSecret;
+  const baseUrl = process.env.SLYBROADCAST_API_BASE_URL || 'https://www.mobile-sphere.com/gateway/vmb.php';
+  const user = process.env.SLYBROADCAST_USERNAME || '';
+  const password = process.env.SLYBROADCAST_PASSWORD || '';
+  if (!user || !password) {
+    return { queued: false, provider: 'slybroadcast', raw: { error: 'missing credentials' } };
+  }
 
-  const payload = {
-    to: toNumber,
-    caller_id: callerId || undefined,
-    audio_url: audioUrl,
-    schedule_at: input.scheduleAt || undefined,
-    title: input.campaignId || undefined,
-    note: input.note || undefined,
-  } as any;
+  const numbers = normalizePhone10(input.to);
+  const isDataUrl = !!(input.audioUrl && input.audioUrl.startsWith('data:'));
+  let audio_url = (!isDataUrl && input.audioUrl) ? input.audioUrl : (process.env.SLYBROADCAST_DEFAULT_AUDIO_URL || '');
+  const audio_ext = (audio_url || '').toLowerCase().endsWith('.m4a') ? 'm4a' : ((audio_url || '').toLowerCase().endsWith('.wav') ? 'wav' : 'mp3');
+
+  const legacy = new URLSearchParams();
+  legacy.append('c_uid', user);
+  legacy.append('c_password', password);
+  legacy.append('c_url', audio_url);
+  legacy.append('c_audio', audio_ext);
+  legacy.append('c_phone', numbers);
+  legacy.append('c_callerID', normalizePhone10(input.callerId || input.from || ''));
+  legacy.append('c_date', input.scheduleAt || 'now');
+  legacy.append('c_title', input.campaignId || '');
+  let res = await doFetch(baseUrl, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: legacy.toString() });
+  let text = await res.text().catch(() => '');
+  const looksError = (s: string) => /error|invalid|fail/i.test(s || '');
+  if (!res.ok || !text || looksError(text)) {
+    const modern = new URLSearchParams();
+    modern.append('campaign_id', input.campaignId || '');
+    modern.append('caller_id', normalizePhone10(input.callerId || input.from || ''));
+    modern.append('audio_url', audio_url);
+    modern.append('list', numbers);
+    modern.append('s', '1');
+    modern.append('date', input.scheduleAt || 'now');
+    modern.append('msg', input.note || '');
+    modern.append('source', 'api');
+    modern.append('method', 'new');
+    modern.append('c_uid', user);
+    modern.append('c_password', password);
+    res = await doFetch(baseUrl, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: modern.toString() });
+    text = await res.text().catch(() => '');
+    if (!res.ok || !text || looksError(text)) {
+      return { queued: false, provider: 'slybroadcast', raw: text || 'no response' };
+    }
+  }
 
   try {
-    const res = await doFetch(endpoint, { method: 'POST', headers, body: JSON.stringify(payload) });
-    const text = await res.text().catch(() => '');
-    if (!res.ok) {
-      return { queued: false, provider, raw: text || `HTTP ${res.status}` };
-    }
-    try {
-      const data = JSON.parse(text);
-      const id = data?.id || data?.message_id || data?.session_id;
-      return { queued: true, provider, id, raw: data };
-    } catch {
-      return { queued: true, provider, raw: text };
-    }
-  } catch (e: any) {
-    return { queued: false, provider, raw: e?.message || 'network error' };
+    const data = JSON.parse(text);
+    const id = (data && (data.campaign_id || data.id)) ? (data.campaign_id || data.id) : undefined;
+    return { queued: true, provider: 'slybroadcast', id, raw: data };
+  } catch {
+    return { queued: true, provider: 'slybroadcast', raw: text };
   }
 }
 
