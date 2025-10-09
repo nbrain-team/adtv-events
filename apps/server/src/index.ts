@@ -536,7 +536,7 @@ app.post('/api/campaigns/:id/execute', async (req, res) => {
             console.warn('[execute] ElevenLabs TTS failed', tts.raw);
           }
         } catch {}
-        const r = await sendVoicemailDrop({ to: ct.phone, audioUrl: audioUrl || undefined, callerId: process.env.SLYBROADCAST_CALLER_ID || undefined, campaignId: campaign?.id });
+        const r = await sendVoicemailDrop({ to: ct.phone, audioUrl: audioUrl || undefined, callerId: process.env.DROPCOWBOY_CALLER_ID || process.env.SLYBROADCAST_CALLER_ID || undefined, campaignId: campaign?.id });
         if (r.queued) vmQueued++;
         else {
           // eslint-disable-next-line no-console
