@@ -75,15 +75,29 @@ export async function sendVoicemailDrop(input: VoicemailDropInput): Promise<Voic
   const form = new URLSearchParams();
   for (const [k, v] of Object.entries(payload)) form.append(k, v);
 
-  const res = await doFetch(baseUrl, {
+  let res = await doFetch(baseUrl, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: form.toString(),
   });
 
-  const text = await res.text().catch(() => '');
-  if (!res.ok) {
-    return { queued: false, provider: 'slybroadcast', raw: text };
+  let text = await res.text().catch(() => '');
+  if (!res.ok || !text) {
+    // Fallback to legacy c_* fields if first attempt failed
+    const legacy = new URLSearchParams();
+    legacy.append('c_uid', user);
+    legacy.append('c_password', password);
+    legacy.append('c_url', audio_url);
+    legacy.append('c_audio', audio_ext);
+    legacy.append('c_phone', numbers);
+    legacy.append('c_callerID', input.callerId || input.from || '');
+    legacy.append('c_date', input.scheduleAt || 'now');
+    legacy.append('c_title', input.campaignId || '');
+    res = await doFetch(baseUrl, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: legacy.toString() });
+    text = await res.text().catch(() => '');
+    if (!res.ok && !text) {
+      return { queued: false, provider: 'slybroadcast', raw: 'no response' };
+    }
   }
 
   // Slybroadcast returns simple text or JSON depending on account. Try JSON first.
