@@ -16,10 +16,10 @@ export type VoicemailDropResult = {
   raw?: any;
 };
 
-function normalizePhoneToUS(input: string): string {
+function normalizePhone10(input: string): string {
   const d = (input || '').replace(/\D/g, '');
   if (d.length === 11 && d.startsWith('1')) return d.slice(1);
-  if (d.length === 10) return d;
+  if (d.length >= 10) return d.slice(-10);
   return d;
 }
 
@@ -48,7 +48,7 @@ export async function sendVoicemailDrop(input: VoicemailDropInput): Promise<Voic
     return { queued: false, provider: 'slybroadcast', raw: { error: 'missing credentials' } };
   }
 
-  const numbers = normalizePhoneToUS(input.to);
+  const numbers = normalizePhone10(input.to);
 
   // Slybroadcast requires either an audio URL, an existing audio id, or an uploaded file.
   // We'll prefer audioUrl. If not present, attempt to use ElevenLabs preview via env default.
@@ -64,7 +64,7 @@ export async function sendVoicemailDrop(input: VoicemailDropInput): Promise<Voic
   legacy.append('c_url', audio_url);
   legacy.append('c_audio', audio_ext);
   legacy.append('c_phone', numbers);
-  legacy.append('c_callerID', input.callerId || input.from || '');
+  legacy.append('c_callerID', normalizePhone10(input.callerId || input.from || ''));
   legacy.append('c_date', input.scheduleAt || 'now');
   legacy.append('c_title', input.campaignId || '');
   let res = await doFetch(baseUrl, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: legacy.toString() });
@@ -74,7 +74,7 @@ export async function sendVoicemailDrop(input: VoicemailDropInput): Promise<Voic
     // Try newer field names as a fallback
     const modern = new URLSearchParams();
     modern.append('campaign_id', input.campaignId || '');
-    modern.append('caller_id', input.callerId || input.from || '');
+    modern.append('caller_id', normalizePhone10(input.callerId || input.from || ''));
     modern.append('audio_url', audio_url);
     modern.append('list', numbers);
     modern.append('s', '1');
