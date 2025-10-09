@@ -57,46 +57,37 @@ export async function sendVoicemailDrop(input: VoicemailDropInput): Promise<Voic
   let audio_url = (!isDataUrl && input.audioUrl) ? input.audioUrl : (process.env.SLYBROADCAST_DEFAULT_AUDIO_URL || '');
   const audio_ext = (audio_url || '').toLowerCase().endsWith('.m4a') ? 'm4a' : ((audio_url || '').toLowerCase().endsWith('.wav') ? 'wav' : 'mp3');
 
-  // v3 API accepts either legacy c_* fields or newer fields; use documented fields
-  const payload: Record<string, string> = {
-    'campaign_id': input.campaignId || '',
-    'caller_id': input.callerId || input.from || '',
-    'audio_url': audio_url,
-    'list': numbers,
-    's': '1',
-    'date': input.scheduleAt || 'now',
-    'msg': input.note || '',
-    'source': 'api',
-    'method': 'new',
-    'c_uid': user,
-    'c_password': password,
-  };
-
-  const form = new URLSearchParams();
-  for (const [k, v] of Object.entries(payload)) form.append(k, v);
-
-  let res = await doFetch(baseUrl, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: form.toString(),
-  });
-
+  // Prefer legacy c_* payload first (most reliable per docs)
+  const legacy = new URLSearchParams();
+  legacy.append('c_uid', user);
+  legacy.append('c_password', password);
+  legacy.append('c_url', audio_url);
+  legacy.append('c_audio', audio_ext);
+  legacy.append('c_phone', numbers);
+  legacy.append('c_callerID', input.callerId || input.from || '');
+  legacy.append('c_date', input.scheduleAt || 'now');
+  legacy.append('c_title', input.campaignId || '');
+  let res = await doFetch(baseUrl, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: legacy.toString() });
   let text = await res.text().catch(() => '');
-  if (!res.ok || !text) {
-    // Fallback to legacy c_* fields if first attempt failed
-    const legacy = new URLSearchParams();
-    legacy.append('c_uid', user);
-    legacy.append('c_password', password);
-    legacy.append('c_url', audio_url);
-    legacy.append('c_audio', audio_ext);
-    legacy.append('c_phone', numbers);
-    legacy.append('c_callerID', input.callerId || input.from || '');
-    legacy.append('c_date', input.scheduleAt || 'now');
-    legacy.append('c_title', input.campaignId || '');
-    res = await doFetch(baseUrl, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: legacy.toString() });
+  const looksError = (s: string) => /error|invalid|fail/i.test(s || '');
+  if (!res.ok || !text || looksError(text)) {
+    // Try newer field names as a fallback
+    const modern = new URLSearchParams();
+    modern.append('campaign_id', input.campaignId || '');
+    modern.append('caller_id', input.callerId || input.from || '');
+    modern.append('audio_url', audio_url);
+    modern.append('list', numbers);
+    modern.append('s', '1');
+    modern.append('date', input.scheduleAt || 'now');
+    modern.append('msg', input.note || '');
+    modern.append('source', 'api');
+    modern.append('method', 'new');
+    modern.append('c_uid', user);
+    modern.append('c_password', password);
+    res = await doFetch(baseUrl, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: modern.toString() });
     text = await res.text().catch(() => '');
-    if (!res.ok && !text) {
-      return { queued: false, provider: 'slybroadcast', raw: 'no response' };
+    if (!res.ok || !text || looksError(text)) {
+      return { queued: false, provider: 'slybroadcast', raw: text || 'no response' };
     }
   }
 
