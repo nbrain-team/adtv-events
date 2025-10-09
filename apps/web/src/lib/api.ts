@@ -7,9 +7,12 @@ async function getJson(path: string) {
 }
 
 async function sendJson(method: string, path: string, body?: any) {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  const token = localStorage.getItem('auth_token');
+  if (token) headers['Authorization'] = `Bearer ${token}`;
   const res = await fetch(`${API_URL}${path}`, {
     method,
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     body: body ? JSON.stringify(body) : undefined,
   });
   if (!res.ok) throw new Error(`${method} ${path} failed`);
@@ -64,6 +67,18 @@ export const apiSms = {
 export const apiVoicemail = {
   drop: (payload: { to?: string; contactId?: string; audioUrl?: string; ttsScript?: string; callerId?: string; scheduleAt?: string; campaignId?: string }) =>
     sendJson('POST', '/api/voicemail/drop', payload),
+};
+
+// Auth
+export const apiAuth = {
+  login: (email: string, password: string) => sendJson('POST', '/api/auth/login', { email, password }),
+  me: () => getJson('/api/auth/me'),
+};
+
+// Google OAuth
+export const apiGoogle = {
+  initiate: (userId: string) => getJson(`/api/auth/google/initiate?userId=${encodeURIComponent(userId)}`) as Promise<{ url: string }>,
+  sync: (userId: string, days?: number) => sendJson('POST', '/api/gmail/sync', { userId, days }),
 };
 
 export { API_URL };

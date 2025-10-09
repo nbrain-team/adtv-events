@@ -33,3 +33,12 @@ pnpm-debug.log*
 
 # Misc
 *.local
+
+# Local env and secrets
+adtv-events-server (1).env
+bonzo.txt
+upload.json
+upload.out
+slybroadcast_api_voicemail_guide.md
+*.mp3
+

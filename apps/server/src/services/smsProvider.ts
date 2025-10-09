@@ -101,9 +101,10 @@ export async function sendSms(input: SendSmsInput): Promise<SendSmsResult> {
   if (TWILIO_ACCOUNT_SID && TWILIO_AUTH_TOKEN && (TWILIO_FROM_NUMBER || TWILIO_MESSAGING_SERVICE_SID)) {
     try {
       const client = twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN);
+      const fromOverride = input.fromNumber ? normalizePhoneToE164BestEffort(input.fromNumber) : undefined;
       const msg = await client.messages.create({
         to,
-        from: TWILIO_MESSAGING_SERVICE_SID ? undefined : TWILIO_FROM_NUMBER,
+        from: TWILIO_MESSAGING_SERVICE_SID ? undefined : (fromOverride || TWILIO_FROM_NUMBER),
         messagingServiceSid: TWILIO_MESSAGING_SERVICE_SID || undefined,
         body: input.text,
       });

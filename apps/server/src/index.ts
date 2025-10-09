@@ -4,6 +4,9 @@ import { PrismaClient } from '@prisma/client';
 import { z } from 'zod';
 import nodemailer from 'nodemailer';
 import twilio from 'twilio';
+import bcrypt from 'bcryptjs';
+import jwt from 'jsonwebtoken';
+import { google } from 'googleapis';
 import { sendSms } from './services/smsProvider';
 import { createProspect as bonzoCreateProspect, optInProspect as bonzoOptIn } from './services/bonzoApi';
 import { generateTtsMp3 } from './services/elevenLabs';
@@ -20,6 +23,27 @@ app.use(cors());
 app.use(express.json({ limit: '2mb' }));
 app.use(express.urlencoded({ extended: true }));
 const prisma = new PrismaClient();
+
+// Auth helpers
+function requireEnv(name: string): string {
+  const v = (process.env as any)[name];
+  if (!v) throw new Error(`Missing env ${name}`);
+  return v as string;
+}
+
+function authMiddleware(req: any, _res: any, next: any) {
+  try {
+    const hdr = (req.headers['authorization'] || '').toString();
+    const token = hdr.startsWith('Bearer ') ? hdr.slice(7) : '';
+    if (token) {
+      const decoded: any = jwt.verify(token, requireEnv('JWT_SECRET'));
+      req.user = decoded;
+    }
+  } catch {}
+  next();
+}
+
+app.use(authMiddleware);
 
 // Content templates loader (CSV from repo root), with simple cache
 type ContentTemplate = { id: string; type: 'email'|'sms'|'voicemail'; name: string; subject?: string; body?: string; text?: string; tts_script?: string };
@@ -439,10 +463,10 @@ app.post('/api/campaigns/:id/execute', async (req, res) => {
   try {
     const body = z.object({ nodeKey: z.string().optional() }).parse(req.body || {});
     const campaignId = req.params.id;
-    const [nodes, contacts, campaign] = await Promise.all([
+  const [nodes, contacts, campaign] = await Promise.all([
       prisma.campaignNode.findMany({ where: { campaignId } }),
       prisma.contact.findMany({ where: { campaignId } }),
-      prisma.campaign.findUnique({ where: { id: campaignId } }),
+    prisma.campaign.findUnique({ where: { id: campaignId }, include: { senderUser: true } }),
     ]);
     const firstSms = nodes.find((n) => n.type === 'sms_send' && (!body.nodeKey || n.key === body.nodeKey));
     const firstEmail = nodes.find((n) => n.type === 'email_send' && (!body.nodeKey || n.key === body.nodeKey));
@@ -477,7 +501,7 @@ app.post('/api/campaigns/:id/execute', async (req, res) => {
         if (!ct.phone) continue;
         const np = splitName(ct.name || '');
         const text = renderMergeTags(baseText, { contact: { name: ct.name, first_name: np.first_name, last_name: np.last_name, email: ct.email, phone: ct.phone }, campaign: campaignCtx }).trim();
-        const resSms = await sendSms({ to: ct.phone, text });
+        const resSms = await sendSms({ to: ct.phone, text, fromNumber: (campaign as any)?.senderUser?.smsFromNumber || undefined });
         let convo = await prisma.conversation.findFirst({ where: { contactId: ct.id, channel: 'sms' } });
         if (!convo) convo = await prisma.conversation.create({ data: { contactId: ct.id, channel: 'sms' } });
         await prisma.message.create({ data: { conversationId: convo.id, direction: 'out', text } });
@@ -504,7 +528,7 @@ app.post('/api/campaigns/:id/execute', async (req, res) => {
           })();
           let convo = await prisma.conversation.findFirst({ where: { contactId: ct.id, channel: 'email' } });
           if (!convo) convo = await prisma.conversation.create({ data: { contactId: ct.id, channel: 'email' } });
-          await prisma.message.create({ data: { conversationId: convo.id, direction: 'out', text: (sub ? `[${sub}]\n\n` : '') + bod } });
+          await prisma.message.create({ data: { conversationId: convo.id, direction: 'out', text: (sub ? `[${sub}]\n\n` : '') + bod, subject: sub, provider: 'smtp' } });
           emailSent++;
         } catch {}
       }
@@ -536,7 +560,7 @@ app.post('/api/campaigns/:id/execute', async (req, res) => {
             console.warn('[execute] ElevenLabs TTS failed', tts.raw);
           }
         } catch {}
-        const r = await sendVoicemailDrop({ to: ct.phone, audioUrl: audioUrl || undefined, callerId: process.env.DROPCOWBOY_CALLER_ID || process.env.SLYBROADCAST_CALLER_ID || undefined, campaignId: campaign?.id });
+        const r = await sendVoicemailDrop({ to: ct.phone, audioUrl: audioUrl || undefined, callerId: ((campaign as any)?.senderUser?.vmCallerId) || process.env.DROPCOWBOY_CALLER_ID || process.env.SLYBROADCAST_CALLER_ID || undefined, campaignId: campaign?.id });
         if (r.queued) vmQueued++;
         else {
           // eslint-disable-next-line no-console
@@ -571,6 +595,7 @@ app.patch('/api/campaigns/:id', async (req, res) => {
       status: z.string().optional(),
       templateId: z.string().optional(),
       importGraph: z.boolean().optional(),
+      senderUserId: z.string().optional(),
     }).partial().parse(req.body);
 
     // Normalize empty strings to null/undefined where appropriate
@@ -597,6 +622,9 @@ app.patch('/api/campaigns/:id', async (req, res) => {
     }
     if (body.launchDate) {
       updateData.launchDate = new Date(body.launchDate);
+    }
+    if (typeof body.senderUserId !== 'undefined') {
+      updateData.senderUserId = body.senderUserId === '' ? null : body.senderUserId;
     }
 
     const updated = await prisma.campaign.update({
@@ -789,7 +817,7 @@ app.get('/api/conversations', async (_req, res) => {
 });
 
 app.post('/api/messages', async (req, res) => {
-  const m = z.object({ conversationId: z.string().optional(), contactId: z.string().optional(), text: z.string(), direction: z.enum(['in','out']) }).parse(req.body);
+  const m = z.object({ conversationId: z.string().optional(), contactId: z.string().optional(), text: z.string(), subject: z.string().optional(), direction: z.enum(['in','out']), provider: z.string().optional(), providerMessageId: z.string().optional() }).parse(req.body);
   let conversationId = m.conversationId || null;
   if (!conversationId && m.contactId) {
     let convo = await prisma.conversation.findFirst({ where: { contactId: m.contactId } });
@@ -799,7 +827,7 @@ app.post('/api/messages', async (req, res) => {
     conversationId = convo.id;
   }
   if (!conversationId) return res.status(400).json({ error: 'conversationId or contactId required' });
-  const created = await prisma.message.create({ data: { conversationId, text: m.text, direction: m.direction } });
+  const created = await prisma.message.create({ data: { conversationId, text: m.text, subject: m.subject, provider: m.provider, providerMessageId: m.providerMessageId, direction: m.direction } });
   res.json(created);
 });
 
@@ -1110,9 +1138,164 @@ app.post('/api/voicemail/drop', async (req, res) => {
 
 // Users
 app.post('/api/users', async (req, res) => {
-  const body = z.object({ name: z.string(), email: z.string().email(), smtp: z.object({ host: z.string(), port: z.number(), user: z.string(), pass: z.string(), secure: z.boolean().optional() }).optional() }).parse(req.body);
-  const created = await prisma.user.create({ data: { name: body.name, email: body.email, smtpHost: body.smtp?.host, smtpPort: body.smtp?.port, smtpUser: body.smtp?.user, smtpPass: body.smtp?.pass, smtpSecure: body.smtp?.secure ?? true } });
+  const body = z.object({ name: z.string(), email: z.string().email(), password: z.string().optional(), role: z.enum(['bdr','admin']).optional(), phone: z.string().optional(), smsFromNumber: z.string().optional(), vmCallerId: z.string().optional(), smtp: z.object({ host: z.string(), port: z.number(), user: z.string(), pass: z.string(), secure: z.boolean().optional() }).optional() }).parse(req.body);
+  const passwordHash = body.password ? await bcrypt.hash(body.password, 10) : null;
+  const created = await prisma.user.create({ data: { name: body.name, email: body.email, role: body.role || 'bdr', passwordHash, phone: body.phone || null, smsFromNumber: body.smsFromNumber || null, vmCallerId: body.vmCallerId || null, smtpHost: body.smtp?.host, smtpPort: body.smtp?.port, smtpUser: body.smtp?.user, smtpPass: body.smtp?.pass, smtpSecure: body.smtp?.secure ?? true } });
   res.json(created);
+});
+
+// Auth endpoints
+app.post('/api/auth/login', async (req, res) => {
+  try {
+    const body = z.object({ email: z.string().email(), password: z.string() }).parse(req.body);
+    const user = await prisma.user.findUnique({ where: { email: body.email } });
+    if (!user || !user.passwordHash) return res.status(401).json({ error: 'Invalid credentials' });
+    const ok = await bcrypt.compare(body.password, user.passwordHash);
+    if (!ok) return res.status(401).json({ error: 'Invalid credentials' });
+    const token = jwt.sign({ id: user.id, email: user.email, role: user.role }, requireEnv('JWT_SECRET'), { expiresIn: '7d' });
+    res.json({ token, user: { id: user.id, name: user.name, email: user.email, role: user.role } });
+  } catch (e: any) {
+    res.status(400).json({ error: e?.message || 'login error' });
+  }
+});
+
+app.get('/api/auth/me', async (req: any, res) => {
+  if (!req.user) return res.status(401).json({ error: 'unauthorized' });
+  const user = await prisma.user.findUnique({ where: { id: req.user.id } });
+  if (!user) return res.status(404).json({ error: 'not found' });
+  res.json({ id: user.id, name: user.name, email: user.email, role: user.role, phone: user.phone, smsFromNumber: user.smsFromNumber, vmCallerId: user.vmCallerId, googleEmail: user.googleEmail });
+});
+
+// BDR CSV import
+function resolveBdrCsvPath(): string | null {
+  const candidates = [
+    path.resolve(__dirname, '../../../../bdr.csv'),
+    path.resolve(process.cwd(), '../../bdr.csv'),
+    path.resolve(process.cwd(), '../bdr.csv'),
+    path.resolve(process.cwd(), 'bdr.csv'),
+  ];
+  for (const p of candidates) { if (fs.existsSync(p)) return p; }
+  return null;
+}
+
+app.post('/api/users/import/bdr', async (_req, res) => {
+  try {
+    const csvPath = resolveBdrCsvPath();
+    if (!csvPath) return res.status(404).json({ error: 'bdr.csv not found in repo root' });
+    const csv = fs.readFileSync(csvPath, 'utf8');
+    const parsed = Papa.parse(csv, { header: true, skipEmptyLines: true } as any);
+    const rows: any[] = Array.isArray((parsed as any).data) ? ((parsed as any).data as any[]) : [];
+    let created = 0;
+    for (const r of rows) {
+      const name = String(r.name || r.Name || '').trim();
+      const email = String(r.email || r.Email || '').trim();
+      const phone = String(r.phone || r.Phone || '').trim();
+      const smsFromNumber = String(r.smsFromNumber || r.SmsFromNumber || '').trim();
+      const vmCallerId = String(r.vmCallerId || r.VmCallerId || '').trim();
+      if (!name || !email) continue;
+      try {
+        const exists = await prisma.user.findUnique({ where: { email } });
+        if (exists) continue;
+        const passwordHash = await bcrypt.hash('123456', 10);
+        await prisma.user.create({ data: { name, email, role: 'bdr', passwordHash, phone: phone || null, smsFromNumber: smsFromNumber || null, vmCallerId: vmCallerId || null } });
+        created++;
+      } catch {}
+    }
+    res.json({ ok: true, created });
+  } catch (e: any) {
+    res.status(500).json({ error: e?.message || 'import error' });
+  }
+});
+
+// Google OAuth2 / Gmail
+function createOAuthClient() {
+  const clientId = requireEnv('GOOGLE_CLIENT_ID');
+  const clientSecret = requireEnv('GOOGLE_CLIENT_SECRET');
+  const redirectUri = requireEnv('GOOGLE_REDIRECT_URI');
+  return new google.auth.OAuth2(clientId, clientSecret, redirectUri);
+}
+
+app.get('/api/auth/google/initiate', async (req: any, res) => {
+  try {
+    const userId = (req.user?.id || req.query.userId || '').toString();
+    if (!userId) return res.status(400).json({ error: 'userId required' });
+    const oauth2Client = createOAuthClient();
+    const scopes = [
+      'https://www.googleapis.com/auth/gmail.readonly',
+      'https://www.googleapis.com/auth/userinfo.email',
+      'openid',
+    ];
+    const url = oauth2Client.generateAuthUrl({ access_type: 'offline', prompt: 'consent', scope: scopes, include_granted_scopes: true, state: JSON.stringify({ userId }) });
+    res.json({ url });
+  } catch (e: any) {
+    res.status(400).json({ error: e?.message || 'oauth error' });
+  }
+});
+
+app.get('/api/auth/google/callback', async (req: any, res) => {
+  try {
+    const code = (req.query.code || '').toString();
+    const state = (() => { try { return JSON.parse((req.query.state || '').toString() || '{}'); } catch { return {}; } })();
+    const userId = (state && state.userId) ? String(state.userId) : '';
+    if (!code || !userId) return res.status(400).json({ error: 'missing code or userId' });
+    const oauth2Client = createOAuthClient();
+    const { tokens } = await oauth2Client.getToken(code);
+    oauth2Client.setCredentials(tokens);
+    const oauth2 = google.oauth2({ version: 'v2', auth: oauth2Client });
+    const me = await oauth2.userinfo.get();
+    const googleEmail = (me.data && (me.data as any).email) ? String((me.data as any).email) : null;
+    await prisma.user.update({ where: { id: userId }, data: {
+      googleAccessToken: tokens.access_token || null,
+      googleRefreshToken: tokens.refresh_token || null,
+      googleTokenExpiry: tokens.expiry_date ? new Date(tokens.expiry_date) : null,
+      googleScope: Array.isArray(tokens.scope) ? (tokens.scope as any).join(' ') : ((tokens.scope as any) || null),
+      googleEmail,
+    } });
+    res.json({ ok: true, googleEmail });
+  } catch (e: any) {
+    res.status(400).json({ error: e?.message || 'callback error' });
+  }
+});
+
+app.post('/api/gmail/sync', async (req, res) => {
+  try {
+    const body = z.object({ userId: z.string(), days: z.number().optional() }).parse(req.body || {});
+    const user = await prisma.user.findUnique({ where: { id: body.userId } });
+    if (!user || !user.googleRefreshToken) return res.status(400).json({ error: 'Google not connected' });
+    const oauth2Client = createOAuthClient();
+    oauth2Client.setCredentials({ refresh_token: user.googleRefreshToken });
+    const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
+
+    const sinceDays = Math.max(1, Math.min(60, body.days || 30));
+    const sent = await prisma.message.findMany({
+      where: { direction: 'out', subject: { not: null }, convo: { contact: { email: { not: null } } } },
+      orderBy: { createdAt: 'desc' },
+      take: 200,
+      include: { convo: { include: { contact: true } } },
+    });
+
+    let imported = 0;
+    for (const m of sent) {
+      const contactEmail = (m as any).convo?.contact?.email as string | undefined;
+      const subject = m.subject as string | undefined;
+      if (!contactEmail || !subject) continue;
+      const q = `from:${contactEmail} to:${user.googleEmail || user.email} subject:\"${subject.replace(/\\\"/g, '"')}\" newer_than:${sinceDays}d`;
+      const list = await gmail.users.messages.list({ userId: 'me', q, maxResults: 5 });
+      const msgs = list.data.messages || [];
+      for (const gm of msgs) {
+        const msgId = gm.id as string;
+        const exists = await prisma.message.findFirst({ where: { provider: 'gmail', providerMessageId: msgId } });
+        if (exists) continue;
+        const full = await gmail.users.messages.get({ userId: 'me', id: msgId, format: 'full' });
+        const snippet = full.data.snippet || '';
+        await prisma.message.create({ data: { conversationId: m.conversationId, direction: 'in', text: snippet || '[Gmail reply]', subject: subject, provider: 'gmail', providerMessageId: msgId, providerThreadId: (full.data.threadId as any) || null, rawJson: JSON.stringify(full.data || {}) } });
+        imported++;
+      }
+    }
+    res.json({ ok: true, imported });
+  } catch (e: any) {
+    res.status(400).json({ error: e?.message || 'sync error' });
+  }
 });
 
 const port = process.env.PORT || 4000;

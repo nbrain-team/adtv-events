@@ -115,6 +115,11 @@ model Message {
   conversationId String
   direction String   // in/out
   text      String
+  subject   String?
+  provider  String?   // smtp | twilio | gmail | slybroadcast
+  providerMessageId String?
+  providerThreadId String?
+  rawJson   String?
   createdAt DateTime @default(now())
 }
 
@@ -123,11 +128,23 @@ model User {
   id         String   @id @default(cuid())
   name       String
   email      String   @unique
+  role       String   @default("bdr") // bdr | admin
+  passwordHash String?
+  phone      String?
+  smsFromNumber String?
+  vmCallerId String?
   smtpHost   String?
   smtpPort   Int?
   smtpUser   String?
   smtpPass   String?
   smtpSecure Boolean? @default(true)
+  // Google OAuth / Gmail
+  googleId           String?
+  googleEmail        String?
+  googleAccessToken  String?
+  googleRefreshToken String?
+  googleTokenExpiry  DateTime?
+  googleScope        String?
   campaigns  Campaign[]
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt

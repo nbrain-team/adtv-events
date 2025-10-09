@@ -1,4 +1,11 @@
+import { useEffect, useState } from 'react';
+import { apiAuth, apiGoogle } from '../lib/api';
+
 export function Settings() {
+  const [me, setMe] = useState<any>(null);
+  useEffect(() => {
+    apiAuth.me().then(setMe).catch(() => setMe(null));
+  }, []);
   const testSend = async () => {
     const num = window.prompt('Enter phone number (E.164 or US local)');
     if (!num) return;
@@ -29,11 +36,47 @@ export function Settings() {
       alert('Drop error');
     }
   };
+  const doLogin = async () => {
+    const email = window.prompt('Email');
+    const password = window.prompt('Password');
+    if (!email || !password) return;
+    try {
+      const r = await apiAuth.login(email, password);
+      localStorage.setItem('auth_token', r.token);
+      const meData = await apiAuth.me();
+      setMe(meData);
+      alert('Logged in');
+    } catch (e) {
+      alert('Login failed');
+    }
+  };
+  const connectGoogle = async () => {
+    if (!me?.id) return alert('Login first');
+    try {
+      const { url } = await apiGoogle.initiate(me.id);
+      window.location.href = url;
+    } catch (e) {
+      alert('Google initiate failed');
+    }
+  };
+  const syncGmail = async () => {
+    if (!me?.id) return alert('Login first');
+    try {
+      const out = await apiGoogle.sync(me.id, 30);
+      alert(`Imported ${out.imported} replies`);
+    } catch (e) {
+      alert('Sync failed');
+    }
+  };
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold">Settings</h1>
-        <p className="text-sm text-gray-600">Branding and integrations (placeholders)</p>
+        <p className="text-sm text-gray-600">Branding and integrations</p>
+        <div className="mt-3 flex items-center gap-3">
+          {!me && <button className="btn-primary btn-sm" onClick={doLogin}>Login</button>}
+          {me && <span className="text-sm text-gray-700">Logged in as {me.email}</span>}
+        </div>
       </div>
 
       <div className="grid md:grid-cols-2 gap-6">
@@ -55,6 +98,14 @@ export function Settings() {
         <div className="card">
           <h2 className="text-lg font-semibold">Integrations</h2>
           <div className="mt-3 space-y-3">
+            <div>
+              <label className="label">Gmail</label>
+              <div className="flex items-center gap-2">
+                <button className="btn-primary btn-sm" onClick={connectGoogle}>Connect Google</button>
+                <button className="btn-secondary btn-sm" onClick={syncGmail}>Sync Replies</button>
+              </div>
+              {me?.googleEmail && <p className="text-xs text-gray-600 mt-1">Connected: {me.googleEmail}</p>}
+            </div>
             <div>
               <label className="label">Email Provider</label>
               <select className="input">
