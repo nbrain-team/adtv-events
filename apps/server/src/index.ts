@@ -252,6 +252,20 @@ app.get('/media/vm/:id.mp3', async (req, res) => {
   res.send(buf);
 });
 
+// Dev-only: upload a raw MP3 and get a public URL for Slybroadcast testing
+app.post('/media/upload/raw', express.raw({ type: '*/*', limit: '20mb' }), async (req, res) => {
+  try {
+    const bodyBuf = Buffer.isBuffer((req as any).body) ? (req as any).body : Buffer.from((req as any).body || '');
+    if (!bodyBuf || bodyBuf.length === 0) return res.status(400).json({ error: 'empty body' });
+    const id = storeVoicemailMp3(bodyBuf);
+    const base = (process.env.PUBLIC_BASE_URL || (((req.headers['x-forwarded-proto'] || req.protocol) + '://' + req.get('host'))));
+    const url = `${String(base).replace(/\/$/, '')}/media/vm/${id}.mp3`;
+    res.json({ url });
+  } catch (e: any) {
+    res.status(500).json({ error: e?.message || 'upload failed' });
+  }
+});
+
 // Templates
 app.get('/api/templates', async (_req, res) => {
   const list = await prisma.template.findMany({ include: { nodes: true, edges: true } });
