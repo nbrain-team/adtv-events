@@ -59,6 +59,8 @@ export async function sendVoicemailDrop(input: VoicemailDropInput): Promise<Voic
   legacy.append('c_callerID', normalizePhone10(input.callerId || input.from || ''));
   legacy.append('c_date', input.scheduleAt || 'now');
   legacy.append('c_title', input.campaignId || '');
+  if ((process.env.SLYBROADCAST_MOBILE_ONLY || '') === '1') legacy.append('mobile_only', '1');
+  if ((process.env.SLYBROADCAST_DISPO_URL || '').trim()) legacy.append('c_dispo_url', String(process.env.SLYBROADCAST_DISPO_URL));
   let res = await doFetch(baseUrl, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: legacy.toString() });
   let text = await res.text().catch(() => '');
   const looksError = (s: string) => /error|invalid|fail/i.test(s || '');
@@ -87,7 +89,10 @@ export async function sendVoicemailDrop(input: VoicemailDropInput): Promise<Voic
     const id = (data && (data.campaign_id || data.id)) ? (data.campaign_id || data.id) : undefined;
     return { queued: true, provider: 'slybroadcast', id, raw: data };
   } catch {
-    return { queued: true, provider: 'slybroadcast', raw: text };
+    // legacy OK string e.g., "OK session_id=123456 number of phone=1"
+    const m = /^\s*OK\s+session_id=([^\s]+)\b/i.exec(text || '');
+    const id = m ? m[1] : undefined;
+    return { queued: true, provider: 'slybroadcast', id, raw: text };
   }
 }
 
