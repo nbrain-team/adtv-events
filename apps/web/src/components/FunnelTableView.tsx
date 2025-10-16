@@ -36,7 +36,7 @@ export function FunnelTableView({ template, onUpdate, onExportCsv, onImportCsv }
         });
       } else {
         for (const edge of outgoingEdges) {
-          const toNode = nodeMap.get(edge.to);
+          const toNode = nodeMap.get(edge.to) as any;
           rows.push({
             nodeId: node.id,
             nodeType: node.type,
@@ -44,7 +44,7 @@ export function FunnelTableView({ template, onUpdate, onExportCsv, onImportCsv }
             configJson: JSON.stringify(node.config || {}, null, 2),
             edgeFrom: edge.from,
             edgeTo: edge.to,
-            edgeToName: toNode?.name || edge.to,
+            edgeToName: (toNode && toNode.name) ? toNode.name : edge.to,
             edgeConditionJson: JSON.stringify(edge.condition || {}, null, 2),
           });
         }

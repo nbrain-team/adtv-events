@@ -13,6 +13,8 @@ const CONTACT_STATUSES = ['No Activity','Needs BDR','Received RSVP','Showed Up T
 export function CampaignBuilder() {
   const params = useParams();
   const { liveCampaigns, contactsByCampaignId, setContactsForCampaign, addToast, campaigns, updateLiveCampaign, upsertCampaign } = useStore();
+  const campaign = useMemo(() => liveCampaigns.find((c) => c.id === params.id), [liveCampaigns, params.id]);
+  const [tab, setTab] = useState<(typeof tabs)[number]>('Overview');
   const [serverTemplates, setServerTemplates] = useState<Array<{ id: string; name: string }>>([]);
   const [templateVersions, setTemplateVersions] = useState<any[]>([]);
   const [selectedTemplateId, setSelectedTemplateId] = useState('');
@@ -41,8 +43,7 @@ export function CampaignBuilder() {
       }
     })();
   }, [campaign?.template_id]);
-  const campaign = useMemo(() => liveCampaigns.find((c) => c.id === params.id), [liveCampaigns, params.id]);
-  const [tab, setTab] = useState<(typeof tabs)[number]>('Overview');
+  
   if (!campaign) return <div className="text-gray-500">Campaign not found.</div>;
 
   const contacts = contactsByCampaignId[campaign.id] || [];
