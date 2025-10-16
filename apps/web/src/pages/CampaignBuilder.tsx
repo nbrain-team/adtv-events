@@ -161,6 +161,62 @@ export function CampaignBuilder() {
                       Choose Version ({templateVersions.length})
                     </button>
                   )}
+                  {campaign.template_id && (
+                    <button 
+                      className="btn-outline btn-sm"
+                      onClick={async () => {
+                        try {
+                          // Create a new version automatically named after the campaign
+                          const versionName = `${campaign.name} - ${new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
+                          
+                          // First, get the current template data
+                          const template = await apiTemplates.get(campaign.template_id!);
+                          const nodes = Array.isArray(template.nodes) 
+                            ? template.nodes.map((n: any) => ({ 
+                                id: n.key, 
+                                type: n.type, 
+                                name: n.name, 
+                                config: n.configJson ? JSON.parse(n.configJson) : {},
+                                pos: (n.posX != null && n.posY != null) ? { x: n.posX, y: n.posY } : undefined 
+                              }))
+                            : [];
+                          const edges = Array.isArray(template.edges)
+                            ? template.edges.map((e: any) => ({ 
+                                from: e.fromKey, 
+                                to: e.toKey, 
+                                condition: e.conditionJson ? JSON.parse(e.conditionJson) : {} 
+                              }))
+                            : [];
+                          
+                          // Create the version
+                          const version = await apiTemplates.createVersion(campaign.template_id!, {
+                            versionName,
+                            description: `Campaign-specific version for ${campaign.name}`,
+                            campaignId: campaign.id,
+                            nodes,
+                            edges,
+                          });
+                          
+                          addToast({ 
+                            title: 'Version created', 
+                            description: versionName, 
+                            variant: 'success' 
+                          });
+                          
+                          // Navigate to template builder with the version
+                          window.location.href = `/templates/${campaign.template_id}?versionId=${version.id}`;
+                        } catch (e: any) {
+                          addToast({ 
+                            title: 'Failed to create version', 
+                            description: e.message, 
+                            variant: 'error' 
+                          });
+                        }
+                      }}
+                    >
+                      Edit Funnel
+                    </button>
+                  )}
                   <button className="btn-primary btn-sm" onClick={async ()=> {
                     try {
                       let effectiveTemplateId = campaign.template_id || '';

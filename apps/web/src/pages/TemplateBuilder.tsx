@@ -40,13 +40,52 @@ export function TemplateBuilder() {
   const params = useParams();
   const { campaigns, upsertCampaign, addToast } = useStore();
   const [serverTemplate, setServerTemplate] = useState<any | null>(null);
+  const [currentVersionId, setCurrentVersionId] = useState<string | null>(null);
+  
   useEffect(() => {
     (async () => {
       try {
         if (!params.id) return;
-        const t = await apiTemplates.get(params.id);
-        if (t && t.id) setServerTemplate(t);
-        // Load versions
+        
+        // Check if we have a versionId in URL
+        const urlParams = new URLSearchParams(window.location.search);
+        const versionId = urlParams.get('versionId');
+        
+        if (versionId) {
+          // Load specific version
+          const version = await apiTemplates.getVersion(params.id, versionId);
+          if (version) {
+            setCurrentVersionId(versionId);
+            // Map version to template shape
+            setServerTemplate({
+              id: params.id,
+              name: `${version.baseTemplate.name} (${version.versionName})`,
+              status: 'draft',
+              version: 1,
+              nodes: version.nodes.map((n: any, idx: number) => ({
+                id: `db_${idx}`,
+                key: n.id,
+                type: n.type,
+                name: n.name,
+                configJson: JSON.stringify(n.config || {}),
+                posX: n.pos?.x,
+                posY: n.pos?.y,
+              })),
+              edges: version.edges.map((e: any, idx: number) => ({
+                id: `db_${idx}`,
+                fromKey: e.from,
+                toKey: e.to,
+                conditionJson: JSON.stringify(e.condition || {}),
+              })),
+            });
+          }
+        } else {
+          // Load base template
+          const t = await apiTemplates.get(params.id);
+          if (t && t.id) setServerTemplate(t);
+        }
+        
+        // Load versions list
         const vList = await apiTemplates.listVersions(params.id);
         setVersions(Array.isArray(vList) ? vList : []);
       } catch { setServerTemplate(null); }
@@ -232,7 +271,7 @@ export function TemplateBuilder() {
   // Stage swimlane headers (simple, above canvas)
   const lanes = Array.from(new Set((template.graph.nodes as any[]).map((n: any) => stageByNode(n.name)))) as string[];
   
-  const handleTableUpdate = (nodes: any[], edges: any[]) => {
+  const handleTableUpdate = async (nodes: any[], edges: any[]) => {
     const newTpl = {
       ...template,
       graph: {
@@ -243,7 +282,18 @@ export function TemplateBuilder() {
     };
     upsertCampaign(newTpl);
     relayout(newTpl);
-    apiTemplates.saveGraph(template.id, { nodes, edges }).catch(()=>{});
+    
+    // If editing a version, update the version; otherwise update base template
+    if (currentVersionId) {
+      try {
+        await apiTemplates.updateVersion(template.id, currentVersionId, { nodes, edges });
+        addToast({ title: 'Version updated', description: 'Changes saved to campaign version', variant: 'success' });
+      } catch (e: any) {
+        addToast({ title: 'Update failed', description: e.message, variant: 'error' });
+      }
+    } else {
+      apiTemplates.saveGraph(template.id, { nodes, edges }).catch(()=>{});
+    }
   };
   
   const handleExportCsv = () => {
@@ -311,15 +361,30 @@ export function TemplateBuilder() {
           <p className="text-sm text-gray-600">
             Nodes: {template.graph.nodes.length} · Edges: {template.graph.edges.length}
             {versions.length > 0 && ` · ${versions.length} version${versions.length !== 1 ? 's' : ''}`}
+            {currentVersionId && (
+              <span className="ml-2 px-2 py-0.5 bg-blue-100 text-blue-800 rounded text-xs font-medium">
+                Editing Campaign Version
+              </span>
+            )}
           </p>
         </div>
         <div className="flex items-center gap-2">
+          {currentVersionId && (
+            <a 
+              className="btn-outline btn-sm" 
+              href={`/campaigns/${versions.find(v => v.id === currentVersionId)?.campaign?.id || ''}`}
+            >
+              ← Back to Campaign
+            </a>
+          )}
           <button className="btn-outline btn-sm" onClick={() => setShowVersions(true)}>
             View Versions ({versions.length})
           </button>
-          <button className="btn-outline btn-sm" onClick={handleSaveAsVersion}>
-            Save as Version
-          </button>
+          {!currentVersionId && (
+            <button className="btn-outline btn-sm" onClick={handleSaveAsVersion}>
+              Save as New Version
+            </button>
+          )}
           <button
             className={`btn-sm ${viewMode === 'flow' ? 'btn-primary' : 'btn-outline'}`}
             onClick={() => setViewMode('flow')}
@@ -431,7 +496,7 @@ export function TemplateBuilder() {
             key={selected.id}
             node={selected}
             edgesOut={outgoing}
-            onChange={(updated) => {
+            onChange={async (updated) => {
               if (!template) return;
               const newTpl = {
                 ...template,
@@ -445,10 +510,19 @@ export function TemplateBuilder() {
                 relayout(newTpl);
                 addToast({ title: 'Node updated', description: updated.name, variant: 'success' });
               }, 0);
-              // Persist graph (best-effort)
-              apiTemplates.saveGraph(template.id, { nodes: newTpl.graph.nodes, edges: newTpl.graph.edges }).catch(()=>{});
+              // Persist to version or base template
+              if (currentVersionId) {
+                try {
+                  await apiTemplates.updateVersion(template.id, currentVersionId, { 
+                    nodes: newTpl.graph.nodes, 
+                    edges: newTpl.graph.edges 
+                  });
+                } catch {}
+              } else {
+                apiTemplates.saveGraph(template.id, { nodes: newTpl.graph.nodes, edges: newTpl.graph.edges }).catch(()=>{});
+              }
             }}
-            onChangeEdges={(newEdges) => {
+            onChangeEdges={async (newEdges) => {
               if (!template) return;
               const newTpl = {
                 ...template,
@@ -462,7 +536,17 @@ export function TemplateBuilder() {
                 setEdges((prev) => prev.map((e) => (e.source === selectedId ? { ...e, label: (newEdges.find((x: any) => x.to === e.target)?.condition?.label) || e.label } : e)));
                 addToast({ title: 'Edge rules saved', description: `${newEdges.length} edges updated`, variant: 'success' });
               }, 0);
-              apiTemplates.saveGraph(template.id, { nodes: newTpl.graph.nodes, edges: newTpl.graph.edges }).catch(()=>{});
+              // Persist to version or base template
+              if (currentVersionId) {
+                try {
+                  await apiTemplates.updateVersion(template.id, currentVersionId, { 
+                    nodes: newTpl.graph.nodes, 
+                    edges: newTpl.graph.edges 
+                  });
+                } catch {}
+              } else {
+                apiTemplates.saveGraph(template.id, { nodes: newTpl.graph.nodes, edges: newTpl.graph.edges }).catch(()=>{});
+              }
             }}
             onDelete={() => {
               if (!template) return;
