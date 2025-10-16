@@ -27,8 +27,27 @@ model Template {
   nodes     Node[]
   edges     Edge[]
   campaigns Campaign[]
+  versions  TemplateVersion[]
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+model TemplateVersion {
+  id              String   @id @default(cuid())
+  baseTemplate    Template @relation(fields: [baseTemplateId], references: [id], onDelete: Cascade)
+  baseTemplateId  String
+  campaign        Campaign? @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  campaignId      String?
+  versionName     String
+  description     String?
+  nodesJson       String   // JSON array of modified nodes
+  edgesJson       String   // JSON array of modified edges
+  createdBy       String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  @@index([baseTemplateId])
+  @@index([campaignId])
 }
 
 model Node {
@@ -74,11 +93,13 @@ model Campaign {
   emailsGenerated Int @default(0)
   templateId String?
   template   Template? @relation(fields: [templateId], references: [id])
+  templateVersionId String?
   senderUserId String?
   senderUser   User?    @relation(fields: [senderUserId], references: [id])
   contacts  Contact[]
   nodes     CampaignNode[]
   edges     CampaignEdge[]
+  templateVersions TemplateVersion[]
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }

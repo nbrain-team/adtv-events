@@ -14,6 +14,11 @@ export function CampaignBuilder() {
   const params = useParams();
   const { liveCampaigns, contactsByCampaignId, setContactsForCampaign, addToast, campaigns, updateLiveCampaign, upsertCampaign } = useStore();
   const [serverTemplates, setServerTemplates] = useState<Array<{ id: string; name: string }>>([]);
+  const [templateVersions, setTemplateVersions] = useState<any[]>([]);
+  const [selectedTemplateId, setSelectedTemplateId] = useState('');
+  const [showVersionSelector, setShowVersionSelector] = useState(false);
+  const [selectedVersionId, setSelectedVersionId] = useState<string | undefined>(undefined);
+  
   useEffect(() => {
     (async () => {
       try {
@@ -23,6 +28,19 @@ export function CampaignBuilder() {
       } catch {}
     })();
   }, []);
+  
+  // Load versions when template changes
+  useEffect(() => {
+    (async () => {
+      if (!campaign?.template_id) return;
+      try {
+        const versions = await apiTemplates.listVersions(campaign.template_id);
+        setTemplateVersions(Array.isArray(versions) ? versions : []);
+      } catch {
+        setTemplateVersions([]);
+      }
+    })();
+  }, [campaign?.template_id]);
   const campaign = useMemo(() => liveCampaigns.find((c) => c.id === params.id), [liveCampaigns, params.id]);
   const [tab, setTab] = useState<(typeof tabs)[number]>('Overview');
   if (!campaign) return <div className="text-gray-500">Campaign not found.</div>;
@@ -108,12 +126,40 @@ export function CampaignBuilder() {
               <div className="md:col-span-2">
                 <label className="label">Funnel Template</label>
                 <div className="flex gap-2">
-                  <select className="input flex-1" value={campaign.template_id||''} onChange={(e)=> { updateLiveCampaign(campaign.id, { template_id: e.target.value }); }}>
+                  <select 
+                    className="input flex-1" 
+                    value={campaign.template_id||''} 
+                    onChange={async (e)=> { 
+                      const newTemplateId = e.target.value;
+                      updateLiveCampaign(campaign.id, { template_id: newTemplateId });
+                      setSelectedTemplateId(newTemplateId);
+                      
+                      // Load versions for this template
+                      if (newTemplateId) {
+                        try {
+                          const versions = await apiTemplates.listVersions(newTemplateId);
+                          setTemplateVersions(Array.isArray(versions) ? versions : []);
+                        } catch {
+                          setTemplateVersions([]);
+                        }
+                      } else {
+                        setTemplateVersions([]);
+                      }
+                    }}
+                  >
                     <option value="">None</option>
                     {serverTemplates.map((t)=> (
                       <option key={t.id} value={t.id}>{t.name}</option>
                     ))}
                   </select>
+                  {campaign.template_id && templateVersions.length > 0 && (
+                    <button 
+                      className="btn-outline btn-sm" 
+                      onClick={() => setShowVersionSelector(true)}
+                    >
+                      Choose Version ({templateVersions.length})
+                    </button>
+                  )}
                   <button className="btn-primary btn-sm" onClick={async ()=> {
                     try {
                       let effectiveTemplateId = campaign.template_id || '';
@@ -132,6 +178,24 @@ export function CampaignBuilder() {
                           }
                         }
                       }
+                      // If a version is selected, use that version's nodes and edges
+                      if (selectedVersionId) {
+                        try {
+                          const version = await apiTemplates.getVersion(effectiveTemplateId, selectedVersionId);
+                          if (version) {
+                            // Create a temporary version for this campaign if needed
+                            const versionName = `${campaign.name} - ${new Date().toLocaleDateString()}`;
+                            await apiTemplates.createVersion(effectiveTemplateId, {
+                              versionName,
+                              description: `Campaign-specific version based on ${version.versionName}`,
+                              campaignId: campaign.id,
+                              nodes: version.nodes,
+                              edges: version.edges,
+                            });
+                          }
+                        } catch {}
+                      }
+                      
                       await apiCampaigns.patch(campaign.id, { templateId: effectiveTemplateId, importGraph: true });
                       addToast({ title: 'Funnel saved', description: 'Template attached and graph imported', variant: 'success' });
                     } catch (e) {
@@ -139,6 +203,13 @@ export function CampaignBuilder() {
                     }
                   }}>Save</button>
                 </div>
+                {selectedVersionId && (
+                  <p className="text-xs text-gray-600 mt-1">
+                    Selected version: <span className="font-medium">
+                      {templateVersions.find(v => v.id === selectedVersionId)?.versionName || selectedVersionId}
+                    </span>
+                  </p>
+                )}
               </div>
             </div>
             <div className="mt-4">
@@ -215,6 +286,63 @@ export function CampaignBuilder() {
 
       {tab==='Map View' && (
         <div className="card text-sm text-gray-500">Map mock placeholder. Clustered markers, hotel marker when applicable.</div>
+      )}
+      
+      {showVersionSelector && (
+        <div className="fixed inset-0 bg-black/30 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg shadow-lg w-full max-w-3xl p-6 space-y-4 max-h-[80vh] overflow-auto">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-semibold">Select Template Version</h3>
+              <button className="btn-outline btn-sm" onClick={() => setShowVersionSelector(false)}>Close</button>
+            </div>
+            
+            <div className="space-y-2">
+              <button
+                className={`w-full text-left p-4 border rounded hover:bg-gray-50 ${!selectedVersionId ? 'border-blue-500 bg-blue-50' : 'border-gray-200'}`}
+                onClick={() => {
+                  setSelectedVersionId(undefined);
+                  setShowVersionSelector(false);
+                }}
+              >
+                <h4 className="font-semibold">Base Template (Latest)</h4>
+                <p className="text-xs text-gray-600 mt-1">
+                  Use the original template without any campaign-specific modifications
+                </p>
+              </button>
+              
+              {templateVersions.map((v) => (
+                <button
+                  key={v.id}
+                  className={`w-full text-left p-4 border rounded hover:bg-gray-50 ${selectedVersionId === v.id ? 'border-blue-500 bg-blue-50' : 'border-gray-200'}`}
+                  onClick={() => {
+                    setSelectedVersionId(v.id);
+                    setShowVersionSelector(false);
+                    addToast({ title: 'Version selected', description: v.versionName, variant: 'success' });
+                  }}
+                >
+                  <h4 className="font-semibold">{v.versionName}</h4>
+                  <p className="text-xs text-gray-600 mt-1">
+                    {v.description} · {v.nodesCount} nodes, {v.edgesCount} edges
+                  </p>
+                  {v.campaign && (
+                    <p className="text-xs text-gray-500 mt-1">
+                      Previously used in: <span className="font-medium">{v.campaign.name}</span>
+                    </p>
+                  )}
+                  <p className="text-xs text-gray-400 mt-1">
+                    Created: {new Date(v.createdAt).toLocaleDateString()}
+                  </p>
+                </button>
+              ))}
+            </div>
+            
+            {templateVersions.length === 0 && (
+              <p className="text-gray-500 text-sm text-center py-4">
+                No versions available for this template. Load the template and make changes to create a version.
+              </p>
+            )}
+          </div>
+        </div>
       )}
     </div>
   );

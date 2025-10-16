@@ -338,6 +338,318 @@ app.delete('/api/templates/:id', async (req, res) => {
   }
 });
 
+// Template Versions - List all versions for a template
+app.get('/api/templates/:id/versions', async (req, res) => {
+  try {
+    const versions = await prisma.templateVersion.findMany({
+      where: { baseTemplateId: req.params.id },
+      include: { campaign: { select: { id: true, name: true, createdAt: true } } },
+      orderBy: { createdAt: 'desc' }
+    });
+    res.json(versions.map(v => ({
+      id: v.id,
+      versionName: v.versionName,
+      description: v.description,
+      createdBy: v.createdBy,
+      createdAt: v.createdAt,
+      updatedAt: v.updatedAt,
+      campaign: v.campaign,
+      nodesCount: JSON.parse(v.nodesJson || '[]').length,
+      edgesCount: JSON.parse(v.edgesJson || '[]').length,
+    })));
+  } catch (e: any) {
+    res.status(400).json({ error: e?.message || 'fetch error' });
+  }
+});
+
+// Get specific template version with full data
+app.get('/api/templates/:templateId/versions/:versionId', async (req, res) => {
+  try {
+    const version = await prisma.templateVersion.findUnique({
+      where: { id: req.params.versionId },
+      include: { campaign: true, baseTemplate: true }
+    });
+    if (!version) return res.status(404).json({ error: 'Version not found' });
+    res.json({
+      ...version,
+      nodes: JSON.parse(version.nodesJson || '[]'),
+      edges: JSON.parse(version.edgesJson || '[]'),
+    });
+  } catch (e: any) {
+    res.status(400).json({ error: e?.message || 'fetch error' });
+  }
+});
+
+// Create a new template version (from campaign customization)
+app.post('/api/templates/:id/versions', async (req, res) => {
+  try {
+    const body = z.object({
+      versionName: z.string(),
+      description: z.string().optional(),
+      campaignId: z.string().optional(),
+      nodes: z.array(z.any()),
+      edges: z.array(z.any()),
+      createdBy: z.string().optional(),
+    }).parse(req.body);
+    
+    const version = await prisma.templateVersion.create({
+      data: {
+        baseTemplateId: req.params.id,
+        versionName: body.versionName,
+        description: body.description,
+        campaignId: body.campaignId,
+        nodesJson: JSON.stringify(body.nodes),
+        edgesJson: JSON.stringify(body.edges),
+        createdBy: body.createdBy,
+      }
+    });
+    
+    res.json({
+      ...version,
+      nodes: JSON.parse(version.nodesJson),
+      edges: JSON.parse(version.edgesJson),
+    });
+  } catch (e: any) {
+    res.status(400).json({ error: e?.message || 'create error' });
+  }
+});
+
+// Update template version
+app.patch('/api/templates/:templateId/versions/:versionId', async (req, res) => {
+  try {
+    const body = z.object({
+      versionName: z.string().optional(),
+      description: z.string().optional(),
+      nodes: z.array(z.any()).optional(),
+      edges: z.array(z.any()).optional(),
+    }).parse(req.body);
+    
+    const data: any = {};
+    if (body.versionName) data.versionName = body.versionName;
+    if (body.description !== undefined) data.description = body.description;
+    if (body.nodes) data.nodesJson = JSON.stringify(body.nodes);
+    if (body.edges) data.edgesJson = JSON.stringify(body.edges);
+    
+    const version = await prisma.templateVersion.update({
+      where: { id: req.params.versionId },
+      data
+    });
+    
+    res.json({
+      ...version,
+      nodes: JSON.parse(version.nodesJson),
+      edges: JSON.parse(version.edgesJson),
+    });
+  } catch (e: any) {
+    res.status(400).json({ error: e?.message || 'update error' });
+  }
+});
+
+// Delete template version
+app.delete('/api/templates/:templateId/versions/:versionId', async (req, res) => {
+  try {
+    await prisma.templateVersion.delete({ where: { id: req.params.versionId } });
+    res.json({ ok: true });
+  } catch (e: any) {
+    res.status(400).json({ error: e?.message || 'delete error' });
+  }
+});
+
+// Export template or version to CSV
+app.get('/api/templates/:id/export/csv', async (req, res) => {
+  try {
+    const versionId = req.query.versionId as string | undefined;
+    let nodes: any[] = [];
+    let edges: any[] = [];
+    let templateName = 'template';
+    
+    if (versionId) {
+      const version = await prisma.templateVersion.findUnique({
+        where: { id: versionId },
+        include: { baseTemplate: true }
+      });
+      if (!version) return res.status(404).json({ error: 'Version not found' });
+      nodes = JSON.parse(version.nodesJson || '[]');
+      edges = JSON.parse(version.edgesJson || '[]');
+      templateName = `${version.baseTemplate.name}_${version.versionName}`;
+    } else {
+      const template = await prisma.template.findUnique({
+        where: { id: req.params.id },
+        include: { nodes: true, edges: true }
+      });
+      if (!template) return res.status(404).json({ error: 'Template not found' });
+      nodes = template.nodes.map(n => ({
+        id: n.key,
+        type: n.type,
+        name: n.name,
+        config: n.configJson ? JSON.parse(n.configJson) : {},
+        pos: (n.posX != null && n.posY != null) ? { x: n.posX, y: n.posY } : undefined
+      }));
+      edges = template.edges.map(e => ({
+        from: e.fromKey,
+        to: e.toKey,
+        condition: e.conditionJson ? JSON.parse(e.conditionJson) : {}
+      }));
+      templateName = template.name;
+    }
+    
+    // Build CSV with columns: NodeID, NodeType, NodeName, ConfigJSON, FromNode, ToNode, EdgeConditionJSON
+    const rows: string[] = ['NodeID,NodeType,NodeName,ConfigJSON,PosX,PosY,EdgeFrom,EdgeTo,EdgeConditionJSON'];
+    
+    // Map node IDs to their data
+    const nodeMap = new Map(nodes.map(n => [n.id, n]));
+    
+    // Create rows for each node with its outgoing edges
+    for (const node of nodes) {
+      const outgoingEdges = edges.filter(e => e.from === node.id);
+      
+      if (outgoingEdges.length === 0) {
+        // Node with no outgoing edges
+        rows.push([
+          `"${node.id}"`,
+          `"${node.type}"`,
+          `"${node.name}"`,
+          `"${JSON.stringify(node.config || {}).replace(/"/g, '""')}"`,
+          node.pos?.x || '',
+          node.pos?.y || '',
+          '',
+          '',
+          ''
+        ].join(','));
+      } else {
+        // Node with outgoing edges - create a row for each edge
+        for (const edge of outgoingEdges) {
+          rows.push([
+            `"${node.id}"`,
+            `"${node.type}"`,
+            `"${node.name}"`,
+            `"${JSON.stringify(node.config || {}).replace(/"/g, '""')}"`,
+            node.pos?.x || '',
+            node.pos?.y || '',
+            `"${edge.from}"`,
+            `"${edge.to}"`,
+            `"${JSON.stringify(edge.condition || {}).replace(/"/g, '""')}"`,
+          ].join(','));
+        }
+      }
+    }
+    
+    const csv = rows.join('\n');
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="${templateName.replace(/[^a-z0-9]/gi, '_')}.csv"`);
+    res.send(csv);
+  } catch (e: any) {
+    res.status(500).json({ error: e?.message || 'export error' });
+  }
+});
+
+// Import CSV to update template or create version
+app.post('/api/templates/:id/import/csv', async (req, res) => {
+  try {
+    const body = z.object({
+      csvData: z.string(),
+      createVersion: z.boolean().default(false),
+      versionName: z.string().optional(),
+      campaignId: z.string().optional(),
+    }).parse(req.body);
+    
+    const parsed = Papa.parse(body.csvData, { header: true, skipEmptyLines: true }) as any;
+    const rows: any[] = Array.isArray(parsed.data) ? parsed.data : [];
+    
+    // Rebuild nodes and edges from CSV
+    const nodeMap = new Map<string, any>();
+    const edges: any[] = [];
+    
+    for (const row of rows) {
+      const nodeId = String(row.NodeID || '').trim();
+      if (!nodeId) continue;
+      
+      // Add or update node
+      if (!nodeMap.has(nodeId)) {
+        const config = row.ConfigJSON ? JSON.parse(String(row.ConfigJSON)) : {};
+        nodeMap.set(nodeId, {
+          id: nodeId,
+          type: String(row.NodeType || 'stage').trim(),
+          name: String(row.NodeName || nodeId).trim(),
+          config,
+          pos: (row.PosX && row.PosY) ? { x: parseFloat(row.PosX), y: parseFloat(row.PosY) } : undefined
+        });
+      }
+      
+      // Add edge if present
+      const edgeFrom = String(row.EdgeFrom || '').trim();
+      const edgeTo = String(row.EdgeTo || '').trim();
+      if (edgeFrom && edgeTo) {
+        const condition = row.EdgeConditionJSON ? JSON.parse(String(row.EdgeConditionJSON)) : {};
+        // Avoid duplicates
+        if (!edges.some(e => e.from === edgeFrom && e.to === edgeTo)) {
+          edges.push({ from: edgeFrom, to: edgeTo, condition });
+        }
+      }
+    }
+    
+    const nodes = Array.from(nodeMap.values());
+    
+    if (body.createVersion) {
+      // Create a new version
+      const versionName = body.versionName || `Import ${new Date().toISOString().slice(0, 10)}`;
+      const version = await prisma.templateVersion.create({
+        data: {
+          baseTemplateId: req.params.id,
+          versionName,
+          description: `Imported from CSV with ${nodes.length} nodes and ${edges.length} edges`,
+          campaignId: body.campaignId,
+          nodesJson: JSON.stringify(nodes),
+          edgesJson: JSON.stringify(edges),
+        }
+      });
+      
+      res.json({
+        ok: true,
+        version: {
+          id: version.id,
+          versionName: version.versionName,
+          nodesCount: nodes.length,
+          edgesCount: edges.length,
+        }
+      });
+    } else {
+      // Update the base template
+      await prisma.$transaction([
+        prisma.node.deleteMany({ where: { templateId: req.params.id } }),
+        prisma.edge.deleteMany({ where: { templateId: req.params.id } }),
+        prisma.node.createMany({
+          data: nodes.map((n: any) => ({
+            templateId: req.params.id,
+            key: n.id,
+            type: n.type,
+            name: n.name,
+            configJson: JSON.stringify(n.config || {}),
+            posX: n.pos?.x ?? null,
+            posY: n.pos?.y ?? null,
+          }))
+        }),
+        prisma.edge.createMany({
+          data: edges.map((e: any) => ({
+            templateId: req.params.id,
+            fromKey: e.from,
+            toKey: e.to,
+            conditionJson: JSON.stringify(e.condition || {}),
+          }))
+        })
+      ]);
+      
+      res.json({
+        ok: true,
+        nodesCount: nodes.length,
+        edgesCount: edges.length,
+      });
+    }
+  } catch (e: any) {
+    res.status(400).json({ error: e?.message || 'import error' });
+  }
+});
+
 // Content Templates (from CSV in repo root)
 app.get('/api/content-templates', async (_req, res) => {
   try {

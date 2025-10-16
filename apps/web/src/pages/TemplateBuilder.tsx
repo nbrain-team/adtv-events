@@ -7,6 +7,7 @@ import 'reactflow/dist/style.css';
 // @ts-ignore
 import dagre from 'dagre';
 import { apiTemplates, apiContentTemplates } from '@lib/api';
+import { FunnelTableView } from '@components/FunnelTableView';
 
 const stageByNode = (name: string) => {
   if (name.includes('Campaign 1')) return 'Campaign 1';
@@ -45,6 +46,9 @@ export function TemplateBuilder() {
         if (!params.id) return;
         const t = await apiTemplates.get(params.id);
         if (t && t.id) setServerTemplate(t);
+        // Load versions
+        const vList = await apiTemplates.listVersions(params.id);
+        setVersions(Array.isArray(vList) ? vList : []);
       } catch { setServerTemplate(null); }
     })();
   }, [params.id]);
@@ -83,6 +87,9 @@ export function TemplateBuilder() {
   const inspectorRef = useRef<HTMLDivElement | null>(null);
   const selected = useMemo(() => template?.graph.nodes.find((n: any) => n.id === selectedId), [template, selectedId]);
   const outgoing = useMemo(() => (template?.graph.edges || []).filter((e: any) => e.from === selectedId), [template, selectedId]);
+  const [viewMode, setViewMode] = useState<'flow' | 'table'>('flow');
+  const [versions, setVersions] = useState<any[]>([]);
+  const [showVersions, setShowVersions] = useState(false);
 
   const relayout = (tpl: typeof template) => {
     if (!tpl) return;
@@ -224,15 +231,107 @@ export function TemplateBuilder() {
 
   // Stage swimlane headers (simple, above canvas)
   const lanes = Array.from(new Set((template.graph.nodes as any[]).map((n: any) => stageByNode(n.name)))) as string[];
+  
+  const handleTableUpdate = (nodes: any[], edges: any[]) => {
+    const newTpl = {
+      ...template,
+      graph: {
+        ...template.graph,
+        nodes,
+        edges,
+      },
+    };
+    upsertCampaign(newTpl);
+    relayout(newTpl);
+    apiTemplates.saveGraph(template.id, { nodes, edges }).catch(()=>{});
+  };
+  
+  const handleExportCsv = () => {
+    const url = apiTemplates.exportCsv(template.id);
+    window.open(url, '_blank');
+  };
+  
+  const handleImportCsv = async (csvData: string) => {
+    try {
+      const result = await apiTemplates.importCsv(template.id, csvData, false);
+      addToast({ title: 'CSV imported', description: `${result.nodesCount} nodes, ${result.edgesCount} edges`, variant: 'success' });
+      // Reload template
+      const t = await apiTemplates.get(template.id);
+      if (t && t.id) setServerTemplate(t);
+    } catch (e: any) {
+      addToast({ title: 'Import failed', description: e.message, variant: 'error' });
+    }
+  };
+  
+  const handleSaveAsVersion = async () => {
+    const versionName = window.prompt('Version name (e.g., "Boston Event Custom"):');
+    if (!versionName) return;
+    
+    try {
+      const created = await apiTemplates.createVersion(template.id, {
+        versionName,
+        description: `Custom version with ${template.graph.nodes.length} nodes`,
+        nodes: template.graph.nodes,
+        edges: template.graph.edges,
+      });
+      addToast({ title: 'Version saved', description: versionName, variant: 'success' });
+      setVersions(prev => [{ ...created, nodesCount: template.graph.nodes.length, edgesCount: template.graph.edges.length }, ...prev]);
+    } catch (e: any) {
+      addToast({ title: 'Save failed', description: e.message, variant: 'error' });
+    }
+  };
+  
+  const handleLoadVersion = async (versionId: string) => {
+    try {
+      const version = await apiTemplates.getVersion(template.id, versionId);
+      if (!version) return;
+      
+      const newTpl = {
+        ...template,
+        graph: {
+          ...template.graph,
+          nodes: version.nodes,
+          edges: version.edges,
+        },
+      };
+      upsertCampaign(newTpl);
+      relayout(newTpl);
+      addToast({ title: 'Version loaded', description: version.versionName, variant: 'success' });
+      setShowVersions(false);
+    } catch (e: any) {
+      addToast({ title: 'Load failed', description: e.message, variant: 'error' });
+    }
+  };
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">{template.name}</h1>
-          <p className="text-sm text-gray-600">Nodes: {template.graph.nodes.length} · Edges: {template.graph.edges.length}</p>
+          <p className="text-sm text-gray-600">
+            Nodes: {template.graph.nodes.length} · Edges: {template.graph.edges.length}
+            {versions.length > 0 && ` · ${versions.length} version${versions.length !== 1 ? 's' : ''}`}
+          </p>
         </div>
         <div className="flex items-center gap-2">
+          <button className="btn-outline btn-sm" onClick={() => setShowVersions(true)}>
+            View Versions ({versions.length})
+          </button>
+          <button className="btn-outline btn-sm" onClick={handleSaveAsVersion}>
+            Save as Version
+          </button>
+          <button
+            className={`btn-sm ${viewMode === 'flow' ? 'btn-primary' : 'btn-outline'}`}
+            onClick={() => setViewMode('flow')}
+          >
+            Flow View
+          </button>
+          <button
+            className={`btn-sm ${viewMode === 'table' ? 'btn-primary' : 'btn-outline'}`}
+            onClick={() => setViewMode('table')}
+          >
+            Table View
+          </button>
           <button
             className="btn-outline btn-sm"
             onClick={async () => {
@@ -264,14 +363,16 @@ export function TemplateBuilder() {
           <a className="btn-outline btn-sm" href="/templates">Back</a>
         </div>
       </div>
+      
+      {viewMode === 'flow' && (
+        <>
+          <div className="flex gap-2 text-xs text-gray-700">
+            {lanes.map((l) => (
+              <span key={l} className="px-2 py-1 rounded border border-gray-200 bg-gray-50">{l}</span>
+            ))}
+          </div>
 
-      <div className="flex gap-2 text-xs text-gray-700">
-        {lanes.map((l) => (
-          <span key={l} className="px-2 py-1 rounded border border-gray-200 bg-gray-50">{l}</span>
-        ))}
-      </div>
-
-      <div className="flex items-end gap-2">
+          <div className="flex items-end gap-2">
         <div className="grid grid-cols-3 gap-2">
           <div>
             <label className="label">New Node Type</label>
@@ -286,10 +387,10 @@ export function TemplateBuilder() {
             <input className="input" value={newNodeName} onChange={(e)=> setNewNodeName(e.target.value)} />
           </div>
         </div>
-        <button className="btn-primary btn-sm" onClick={handleAddNode}>+ Add Node</button>
-      </div>
+            <button className="btn-primary btn-sm" onClick={handleAddNode}>+ Add Node</button>
+          </div>
 
-      <div id="flow-canvas-root" className="relative left-1/2 right-1/2 -mx-[50vw] w-screen bg-white border-t border-b h-[calc(100vh-220px)]">
+          <div id="flow-canvas-root" className="relative left-1/2 right-1/2 -mx-[50vw] w-screen bg-white border-t border-b h-[calc(100vh-220px)]">
         <div className="h-full mx-16">
           <ReactFlow
           nodes={nodes}
@@ -318,10 +419,10 @@ export function TemplateBuilder() {
             <MiniMap nodeStrokeColor={(n) => '#9ca3af'} nodeColor={() => '#e5e7eb'} />
             <Controls />
           </ReactFlow>
+          </div>
         </div>
-      </div>
 
-      <div ref={inspectorRef} className="card mt-4 max-h-[60vh] overflow-auto">
+        <div ref={inspectorRef} className="card mt-4 max-h-[60vh] overflow-auto">
         <h3 className="text-lg font-semibold mb-2">Inspector</h3>
         {!selected ? (
           <p className="text-sm text-gray-500">Select a node to edit.</p>
@@ -383,7 +484,89 @@ export function TemplateBuilder() {
             }}
           />
         )}
-      </div>
+        </div>
+        </>
+      )}
+      
+      {viewMode === 'table' && (
+        <FunnelTableView
+          template={template}
+          onUpdate={handleTableUpdate}
+          onExportCsv={handleExportCsv}
+          onImportCsv={handleImportCsv}
+        />
+      )}
+      
+      {showVersions && (
+        <div className="fixed inset-0 bg-black/30 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg shadow-lg w-full max-w-4xl p-6 space-y-4 max-h-[80vh] overflow-auto">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-semibold">Template Versions</h3>
+              <button className="btn-outline btn-sm" onClick={() => setShowVersions(false)}>Close</button>
+            </div>
+            
+            {versions.length === 0 ? (
+              <p className="text-gray-500 text-sm">No versions yet. Click "Save as Version" to create one.</p>
+            ) : (
+              <div className="space-y-2">
+                {versions.map((v) => (
+                  <div key={v.id} className="border rounded p-4 hover:bg-gray-50">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h4 className="font-semibold">{v.versionName}</h4>
+                        <p className="text-xs text-gray-600">
+                          {v.description} · {v.nodesCount} nodes, {v.edgesCount} edges
+                        </p>
+                        {v.campaign && (
+                          <p className="text-xs text-gray-500 mt-1">
+                            Used in: <span className="font-medium">{v.campaign.name}</span>
+                          </p>
+                        )}
+                        <p className="text-xs text-gray-400 mt-1">
+                          Created: {new Date(v.createdAt).toLocaleDateString()}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          className="btn-primary btn-sm"
+                          onClick={() => handleLoadVersion(v.id)}
+                        >
+                          Load
+                        </button>
+                        <button
+                          className="btn-outline btn-sm"
+                          onClick={() => {
+                            const url = apiTemplates.exportCsv(template.id, v.id);
+                            window.open(url, '_blank');
+                          }}
+                        >
+                          Export CSV
+                        </button>
+                        <button
+                          className="btn-outline btn-sm text-red-600"
+                          onClick={async () => {
+                            const confirm = window.confirm(`Delete version "${v.versionName}"?`);
+                            if (!confirm) return;
+                            try {
+                              await apiTemplates.deleteVersion(template.id, v.id);
+                              setVersions(prev => prev.filter(x => x.id !== v.id));
+                              addToast({ title: 'Version deleted', description: v.versionName, variant: 'info' });
+                            } catch (e: any) {
+                              addToast({ title: 'Delete failed', description: e.message, variant: 'error' });
+                            }
+                          }}
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

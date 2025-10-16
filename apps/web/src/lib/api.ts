@@ -26,6 +26,17 @@ export const apiTemplates = {
   create: (name: string, graph: { nodes: any[]; edges: any[] }) => sendJson('POST', '/api/templates', { name, graph }),
   saveGraph: (id: string, graph: { nodes: any[]; edges: any[] }) => sendJson('PUT', `/api/templates/${id}/graph`, graph),
   delete: (id: string) => sendJson('DELETE', `/api/templates/${id}`),
+  // Template versions
+  listVersions: (templateId: string) => getJson(`/api/templates/${templateId}/versions`),
+  getVersion: (templateId: string, versionId: string) => getJson(`/api/templates/${templateId}/versions/${versionId}`),
+  createVersion: (templateId: string, data: { versionName: string; description?: string; campaignId?: string; nodes: any[]; edges: any[]; createdBy?: string }) =>
+    sendJson('POST', `/api/templates/${templateId}/versions`, data),
+  updateVersion: (templateId: string, versionId: string, data: { versionName?: string; description?: string; nodes?: any[]; edges?: any[] }) =>
+    sendJson('PATCH', `/api/templates/${templateId}/versions/${versionId}`, data),
+  deleteVersion: (templateId: string, versionId: string) => sendJson('DELETE', `/api/templates/${templateId}/versions/${versionId}`),
+  exportCsv: (templateId: string, versionId?: string) => `${API_URL}/api/templates/${templateId}/export/csv${versionId ? `?versionId=${versionId}` : ''}`,
+  importCsv: (templateId: string, csvData: string, createVersion: boolean, versionName?: string, campaignId?: string) =>
+    sendJson('POST', `/api/templates/${templateId}/import/csv`, { csvData, createVersion, versionName, campaignId }),
 };
 
 export const apiContentTemplates = {
